@@ -1,8 +1,49 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.jsx";
-import { Lightbulb, MessageSquareText } from "lucide-react";
 
 // ---- Icons -------------------------------------------------------
+function LightbulbIcon() {
+    return (
+        <svg
+            className="sidebar-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.9 1.2 1.5 1.5 2.5" />
+            <path d="M9 18h6" />
+            <path d="M10 22h4" />
+        </svg>
+    );
+}
+
+function MessageSquareTextIcon() {
+    return (
+        <svg
+            className="sidebar-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            <path d="M13 8H7" />
+            <path d="M17 12H7" />
+        </svg>
+    );
+}
+
 function DashboardIcon() {
     return (
         <svg
@@ -202,7 +243,7 @@ export default function Sidebar({ open, onClose }) {
                         }
                         onClick={onClose}
                     >
-                        <Lightbulb className="sidebar-icon" strokeWidth={1.8} />
+                        <LightbulbIcon />
                         Recommendations
                     </NavLink>
 
@@ -213,7 +254,7 @@ export default function Sidebar({ open, onClose }) {
                         }
                         onClick={onClose}
                     >
-                        <MessageSquareText className="sidebar-icon" strokeWidth={1.8} />
+                        <MessageSquareTextIcon />
                         Feedback
                     </NavLink>
 

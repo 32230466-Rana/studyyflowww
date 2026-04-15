@@ -123,7 +123,15 @@ class AuthController extends Controller
         }
 
         if (!$user->email_verified_at) {
-            return ApiResponse::error('Verify your email first.', 403);
+            $code = $this->generateSixDigitCode();
+            $user->update(['verification_code' => $code]);
+            $this->sendAuthEmail(
+                $user->email,
+                'Verify your email',
+                "Your verification code is: {$code}"
+            );
+
+            return ApiResponse::error('Verify your email first. A new verification code has been sent.', 403);
         }
 
         $user->last_login_at = now();

@@ -47,21 +47,28 @@ export function AuthProvider({ children }) {
     };
 
     const login = async ({ email, password }) => {
-        const res = await axiosClient.post("/auth/login", {
-            email,
-            password,
-        });
+        try {
+            const res = await axiosClient.post("/auth/login", {
+                email,
+                password,
+            });
 
-        const newToken = res.data?.data?.token;
+            const newToken = res.data?.data?.token;
 
-        // Successful login means email is verified.
-        setPendingEmailForVerification(null);
+            // Successful login means email is verified.
+            setPendingEmailForVerification(null);
 
-        setAuthToken(newToken);
+            setAuthToken(newToken);
 
-        setUser(res.data?.data?.user ?? null);
+            setUser(res.data?.data?.user ?? null);
 
-        return res;
+            return res;
+        } catch (error) {
+            if (error?.response?.status === 403) {
+                setPendingEmailForVerification(email);
+            }
+            throw error;
+        }
     };
 
     const register = async ({

@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\Note;
 use App\Models\Summary;
 use App\Support\ApiResponse;
+use thiagoalessio\TesseractOCR\TesseractOCR;
 
 class AiController extends Controller
 {
@@ -17,13 +18,10 @@ class AiController extends Controller
     {
         return response()->json([
             'success' => true,
-            'message' => 'Reset done'
+            'message' => 'Reset done',
         ]);
     }
 
-    // =========================
-    // Test Ollama connection
-    // =========================
     public function testOllama()
     {
         $baseUrl = $this->ollamaBaseUrl();
@@ -65,9 +63,6 @@ class AiController extends Controller
         }
     }
 
-    // =========================
-    // Generate ONE question from a note
-    // =========================
     public function generateQuestion(Request $request)
     {
         $validated = $request->validate([
@@ -140,9 +135,6 @@ class AiController extends Controller
         }
     }
 
-    // =========================
-    // Check if an answer is correct
-    // =========================
     public function checkAnswer(Request $request)
     {
         $validated = $request->validate([
@@ -178,15 +170,15 @@ class AiController extends Controller
                 'message' => $e->getMessage(),
             ]);
 
-            return ApiResponse::success($this->fallbackCheckAnswer($expected, $user), 'Answer checked', 200, [
-                'fallback_used' => true,
-            ]);
+            return ApiResponse::success(
+                $this->fallbackCheckAnswer($expected, $user),
+                'Answer checked',
+                200,
+                ['fallback_used' => true]
+            );
         }
     }
 
-    // =========================
-    // Generate MCQ quiz from a note
-    // =========================
     public function quiz(Request $request)
     {
         $validated = $request->validate([
@@ -284,11 +276,10 @@ class AiController extends Controller
         }
     }
 
-    // =========================
-    // Summarize an existing note PDF via Python API
-    // =========================
     public function summarize(Request $request)
     {
+        @set_time_limit(120);
+
         $validated = $request->validate([
             'note_id' => ['required', 'integer', 'min:1'],
         ]);
@@ -321,11 +312,10 @@ class AiController extends Controller
             }
 
             $filename = (string) ($note->original_filename ?: basename($storedPath));
-
             $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-            $mimeType = (string) ($note->mime_type ?? '');
+            $mimeType = strtolower((string) ($note->mime_type ?? ''));
 
-            if ($extension !== 'pdf' && ! str_contains(strtolower($mimeType), 'pdf')) {
+            if ($extension !== 'pdf' && ! str_contains($mimeType, 'pdf')) {
                 return response()->json([
                     'success' => false,
                     'filename' => $filename,
@@ -344,19 +334,63 @@ class AiController extends Controller
 
             $fullPath = $disk->path($storedPath);
 
-            $pythonUrl = 'http://127.0.0.1:8002/summarize';
-            $timeout = 300;
-            $connectTimeout = 10;
+            $cachedText = $this->prepareSummaryInput(
+                (string) ($note->extracted_text ?: $note->text_content ?: '')
+            );
+
+            $text = '';
+            $sourceMode = 'none';
+
+            if ($this->hasEnoughSummaryText($cachedText)) {
+                $text = $cachedText;
+                $sourceMode = 'cached';
+            } else {
+                $parsedText = $this->extractPdfTextPreserveLayout($fullPath);
+
+                if ($this->hasEnoughSummaryText($parsedText)) {
+                    $text = $parsedText;
+                    $sourceMode = 'pdf_parser';
+                } else {
+                    $ocrText = $this->extractTextWithOcrFallback($fullPath, 5);
+                    $combined = trim($parsedText . "\n\n" . $ocrText);
+
+                    if ($this->hasEnoughSummaryText($combined)) {
+                        $text = $combined;
+                        $sourceMode = $parsedText !== '' ? 'pdf_parser+ocr' : 'ocr';
+                    }
+                }
+            }
+
+            if (! $this->hasEnoughSummaryText($text)) {
+                return response()->json([
+                    'success' => false,
+                    'filename' => $filename,
+                    'message' => 'Could not extract enough text from this PDF.',
+                ], 422);
+            }
+
+            $text = $this->prepareSummaryInput($text, 16000);
+
+            $pythonUrl = 'http://127.0.0.1:8001/summarize-fast';
+            $timeout = 75;
+            $connectTimeout = 5;
 
             $pythonResponse = Http::connectTimeout($connectTimeout)
                 ->timeout($timeout)
-                ->attach('file', file_get_contents($fullPath), $filename)
-                ->post($pythonUrl);
+                ->post($pythonUrl, [
+                    'text' => $text,
+                    'model' => $this->ollamaModel(),
+                    'max_words' => 115,
+                    'fast_mode' => true,
+                    'document_style' => 'slides',
+                ]);
 
             if (! $pythonResponse->successful()) {
                 Log::error('Python summary API failed', [
                     'status' => $pythonResponse->status(),
                     'body' => $pythonResponse->body(),
+                    'source_mode' => $sourceMode,
+                    'note_id' => $noteId,
                 ]);
 
                 return response()->json([
@@ -367,15 +401,12 @@ class AiController extends Controller
             }
 
             $summary = trim((string) $pythonResponse->json('summary'));
-            $pythonSuccess = $pythonResponse->json('success');
+            $mode = (string) $pythonResponse->json('mode', 'unknown');
+            $durationSec = (float) $pythonResponse->json('duration_sec', 0);
+            $selectedSentences = (int) $pythonResponse->json('selected_sentences', 0);
+            $modelUsed = (string) $pythonResponse->json('model', $this->ollamaModel());
 
             if ($summary === '') {
-                Log::warning('Python summary API returned empty summary', [
-                    'note_id' => $noteId,
-                    'python_success' => $pythonSuccess,
-                    'body' => $pythonResponse->json(),
-                ]);
-
                 return response()->json([
                     'success' => false,
                     'filename' => $filename,
@@ -383,16 +414,11 @@ class AiController extends Controller
                 ], 502);
             }
 
-            $title = trim((string) ($note->title ?: pathinfo($filename, PATHINFO_FILENAME)));
-            if ($title === '') {
-                $title = 'Summary for Note #' . $note->id;
-            }
-
             try {
                 $saved = Summary::create([
                     'user_id' => $request->user()->id,
                     'note_id' => $note->id,
-                    'title' => $title,
+                    'title' => trim((string) ($note->title ?: pathinfo($filename, PATHINFO_FILENAME))) ?: ('Summary for Note #' . $note->id),
                     'source_type' => 'pdf',
                     'summary_text' => $summary,
                 ]);
@@ -416,21 +442,30 @@ class AiController extends Controller
                 'filename' => $filename,
                 'message' => 'Summary generated successfully.',
                 'summary_id' => $saved->id,
+                'mode' => $mode,
+                'duration_sec' => $durationSec,
+                'selected_sentences' => $selectedSentences,
+                'model' => $modelUsed,
+                'text_source' => $sourceMode,
+                'document_style' => 'slides',
             ]);
         } catch (\Throwable $e) {
             Log::error('Summarize error', [
                 'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'note_id' => $noteId,
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Summary failed.',
+                'message' => app()->isLocal() ? $e->getMessage() : 'Summary failed.',
+                'file' => app()->isLocal() ? $e->getFile() : null,
+                'line' => app()->isLocal() ? $e->getLine() : null,
             ], 500);
         }
     }
-    // =========================
-    // Chat about a user's note
-    // =========================
+
     public function chat(Request $request)
     {
         $validated = $request->validate([
@@ -490,9 +525,6 @@ PROMPT;
         }
     }
 
-    // =========================
-    // Helpers
-    // =========================
     private function ollamaBaseUrl(): string
     {
         return rtrim((string) config('services.ollama.base_url', 'http://127.0.0.1:11434'), '/');
@@ -579,6 +611,7 @@ PROMPT;
 
         $start = strpos($text, '{');
         $end = strrpos($text, '}');
+
         if ($start === false || $end === false || $end <= $start) {
             return null;
         }
@@ -587,6 +620,7 @@ PROMPT;
         $candidate = trim($candidate);
 
         $decoded = json_decode($candidate, true);
+
         if (! is_array($decoded) || json_last_error() !== JSON_ERROR_NONE) {
             return null;
         }
@@ -821,6 +855,7 @@ PROMPT;
         if (! is_numeric($score)) {
             return null;
         }
+
         $score = max(0.0, min(1.0, (float) $score));
 
         $feedback = $this->cleanText((string) $decoded['feedback'], 160);
@@ -848,7 +883,10 @@ PROMPT;
             ];
         }
 
-        $correct = ($expectedNorm === $userNorm) || str_contains($expectedNorm, $userNorm) || str_contains($userNorm, $expectedNorm);
+        $correct = ($expectedNorm === $userNorm)
+            || str_contains($expectedNorm, $userNorm)
+            || str_contains($userNorm, $expectedNorm);
+
         $score = $correct ? 1.0 : 0.0;
 
         return [
@@ -865,12 +903,14 @@ PROMPT;
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = preg_replace('/[^\pL\pN\s]/u', ' ', $text);
         $text = preg_replace('/\s+/u', ' ', $text);
+
         return trim($text);
     }
 
     private function normalizeQuestionText(string $text): string
     {
         $text = $this->cleanText($text, 200);
+
         if ($text === '') {
             return '';
         }
@@ -898,9 +938,11 @@ PROMPT;
     private function fallbackOneQuestion(string $noteText): string
     {
         $topic = $this->guessTopicFromText($noteText);
+
         if ($topic !== '' && $topic !== 'General') {
             return "What is the key idea about {$topic}?";
         }
+
         return 'What is the main idea of this note?';
     }
 
@@ -935,5 +977,252 @@ PROMPT;
         }
 
         return mb_substr($text, 0, $maxChars);
+    }
+
+    private function prepareSummaryInput(?string $text, int $maxChars = 50000): string
+    {
+        $text = (string) $text;
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = strip_tags($text);
+        $text = str_replace(["\r\n", "\r"], "\n", $text);
+        $text = preg_replace("/[ \t]+/u", ' ', $text);
+        $text = preg_replace("/\n{3,}/u", "\n\n", $text);
+        $text = trim($text);
+
+        if ($text === '') {
+            return '';
+        }
+
+        return mb_substr($text, 0, $maxChars);
+    }
+
+    private function hasEnoughSummaryText(string $text): bool
+    {
+        $text = trim($text);
+
+        if ($text === '') {
+            return false;
+        }
+
+        if (mb_strlen($text) < 260) {
+            return false;
+        }
+
+        preg_match_all('/[\pL]/u', $text, $letters);
+        $letterCount = count($letters[0] ?? []);
+
+        if ($letterCount < 150) {
+            return false;
+        }
+
+        $lines = preg_split("/\r\n|\n|\r/u", $text);
+        $longLines = 0;
+
+        foreach ($lines as $line) {
+            if (mb_strlen(trim($line)) >= 20) {
+                $longLines++;
+            }
+        }
+
+        return $longLines >= 3 || mb_strlen($text) >= 650;
+    }
+
+    private function extractPdfTextPreserveLayout(string $fullPath): string
+    {
+        $content = '';
+
+        try {
+            if (class_exists(\Smalot\PdfParser\Parser::class)) {
+                $parser = new \Smalot\PdfParser\Parser();
+                $pdf = $parser->parseFile($fullPath);
+                $content = (string) $pdf->getText();
+            }
+        } catch (\Throwable $e) {
+            Log::error('PDF Parse failed in controller', [
+                'error' => $e->getMessage(),
+                'path' => $fullPath,
+            ]);
+        }
+
+        return $this->prepareSummaryInput($content, 50000);
+    }
+
+    private function extractTextWithOcrFallback(string $pdfPath, int $maxPages = 5): string
+    {
+        $poppler = $this->popplerBinaryPath();
+        $tesseract = $this->tesseractBinaryPath();
+
+        if (! is_file($poppler) || ! is_file($tesseract)) {
+            Log::warning('OCR fallback skipped because binaries were not found', [
+                'poppler' => $poppler,
+                'tesseract' => $tesseract,
+            ]);
+
+            return '';
+        }
+
+        $tempDir = storage_path('app/ocr_tmp/' . uniqid('summary_', true));
+
+        if (! is_dir($tempDir) && ! @mkdir($tempDir, 0777, true) && ! is_dir($tempDir)) {
+            return '';
+        }
+
+        try {
+            $pageCount = $this->getPdfPageCount($pdfPath);
+            $pages = $this->pickOcrSamplePages($pageCount, $maxPages);
+
+            if (empty($pages)) {
+                $pages = [1];
+            }
+
+            $allText = [];
+
+            foreach ($pages as $page) {
+                $prefix = $tempDir . DIRECTORY_SEPARATOR . 'page_' . $page;
+
+                $cmd = escapeshellarg($poppler)
+                    . ' -f ' . (int) $page
+                    . ' -l ' . (int) $page
+                    . ' -r 130 -png -singlefile '
+                    . escapeshellarg($pdfPath) . ' '
+                    . escapeshellarg($prefix)
+                    . ' 2>&1';
+
+                $output = [];
+                $exitCode = 0;
+                @exec($cmd, $output, $exitCode);
+
+                if ($exitCode !== 0) {
+                    Log::warning('pdftoppm page extraction failed', [
+                        'page' => $page,
+                        'exit_code' => $exitCode,
+                        'output' => implode("\n", $output),
+                    ]);
+                    continue;
+                }
+
+                $imagePath = $prefix . '.png';
+
+                if (! file_exists($imagePath)) {
+                    continue;
+                }
+
+                try {
+                    $pageText = (new TesseractOCR($imagePath))
+                        ->executable($tesseract)
+                        ->run();
+
+                    $pageText = $this->prepareSummaryInput($pageText, 10000);
+
+                    if ($pageText !== '') {
+                        $allText[] = $pageText;
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('OCR page failed', [
+                        'image' => $imagePath,
+                        'page' => $page,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            $this->cleanupOcrTempDir($tempDir);
+
+            return $this->prepareSummaryInput(implode("\n\n", $allText), 50000);
+        } catch (\Throwable $e) {
+            Log::error('OCR fallback failed', [
+                'message' => $e->getMessage(),
+                'path' => $pdfPath,
+            ]);
+
+            $this->cleanupOcrTempDir($tempDir);
+
+            return '';
+        }
+    }
+
+    private function getPdfPageCount(string $pdfPath): int
+    {
+        $pdfInfo = $this->pdfInfoBinaryPath();
+
+        if (! is_file($pdfInfo)) {
+            return 0;
+        }
+
+        $cmd = escapeshellarg($pdfInfo) . ' ' . escapeshellarg($pdfPath) . ' 2>&1';
+
+        $output = [];
+        $exitCode = 0;
+        @exec($cmd, $output, $exitCode);
+
+        if ($exitCode !== 0) {
+            return 0;
+        }
+
+        $joined = implode("\n", $output);
+
+        if (preg_match('/Pages:\s+(\d+)/i', $joined, $m)) {
+            return max(0, (int) $m[1]);
+        }
+
+        return 0;
+    }
+
+    private function pickOcrSamplePages(int $pageCount, int $maxPages = 5): array
+    {
+        if ($pageCount <= 0) {
+            return [1];
+        }
+
+        if ($pageCount <= $maxPages) {
+            return range(1, $pageCount);
+        }
+
+        $pages = [
+            1,
+            max(1, (int) round($pageCount * 0.20)),
+            max(1, (int) round($pageCount * 0.40)),
+            max(1, (int) round($pageCount * 0.65)),
+            $pageCount,
+        ];
+
+        $pages = array_values(array_unique(array_map(
+            fn($p) => max(1, min($pageCount, (int) $p)),
+            $pages
+        )));
+
+        sort($pages);
+
+        return array_slice($pages, 0, $maxPages);
+    }
+
+    private function cleanupOcrTempDir(string $tempDir): void
+    {
+        try {
+            foreach (glob($tempDir . DIRECTORY_SEPARATOR . '*') ?: [] as $file) {
+                @unlink($file);
+            }
+            @rmdir($tempDir);
+        } catch (\Throwable $e) {
+            Log::warning('OCR temp cleanup failed', [
+                'dir' => $tempDir,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function popplerBinaryPath(): string
+    {
+        return 'C:\\Users\\obaid\\Downloads\\Release-25.12.0-0\\poppler-25.12.0\\Library\\bin\\pdftoppm.exe';
+    }
+
+    private function pdfInfoBinaryPath(): string
+    {
+        return 'C:\\Users\\obaid\\Downloads\\Release-25.12.0-0\\poppler-25.12.0\\Library\\bin\\pdfinfo.exe';
+    }
+
+    private function tesseractBinaryPath(): string
+    {
+        return 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe';
     }
 }

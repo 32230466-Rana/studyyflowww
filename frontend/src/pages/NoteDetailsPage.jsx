@@ -30,6 +30,7 @@ export default function NoteDetailsPage() {
     const [summary, setSummary] = useState("");
     const [summaryFilename, setSummaryFilename] = useState("");
     const [summaryLoading, setSummaryLoading] = useState(false);
+    const [summaryTime, setSummaryTime] = useState(null);
 
     const [aiError, setAiError] = useState("");
 
@@ -51,7 +52,9 @@ export default function NoteDetailsPage() {
                 if (!mounted) return;
                 setNote(res.data?.data || null);
             } catch (err) {
-                setError(err?.response?.data?.message || "Failed to load note.");
+                setError(
+                    err?.response?.data?.message || "Failed to load note."
+                );
             } finally {
                 if (mounted) setLoading(false);
             }
@@ -120,10 +123,17 @@ export default function NoteDetailsPage() {
             setAiError("");
             setSummary("");
             setSummaryFilename("");
+            setSummaryTime(null);
+
+            const startTime = performance.now();
 
             const response = await axiosClient.post("/ai/summarize", {
                 note_id: Number(id),
             });
+
+            const endTime = performance.now();
+            const timeTaken = ((endTime - startTime) / 1000).toFixed(2);
+            setSummaryTime(timeTaken);
 
             const ok = response.data?.success;
             const returnedSummary = response.data?.summary || "";
@@ -131,7 +141,9 @@ export default function NoteDetailsPage() {
                 response.data?.filename || note?.original_filename || "";
 
             if (ok === false) {
-                setAiError(response.data?.message || "Failed to generate summary.");
+                setAiError(
+                    response.data?.message || "Failed to generate summary."
+                );
                 return;
             }
 
@@ -156,9 +168,15 @@ export default function NoteDetailsPage() {
         if (!summary) return;
 
         const rawBase = (note?.title || "").trim();
-        const rawFilename = (summaryFilename || note?.original_filename || "").trim();
+        const rawFilename = (
+            summaryFilename ||
+            note?.original_filename ||
+            ""
+        ).trim();
 
-        const withoutExt = rawFilename ? rawFilename.replace(/\.[^/.]+$/, "") : "";
+        const withoutExt = rawFilename
+            ? rawFilename.replace(/\.[^/.]+$/, "")
+            : "";
         const base = rawBase || withoutExt || `note-${id}`;
 
         const safeBase = base
@@ -333,7 +351,10 @@ export default function NoteDetailsPage() {
                             }}
                         >
                             <h3 style={{ margin: 0 }}>
-                                Summary of {summaryFilename || note?.original_filename || "this file"}
+                                Summary of{" "}
+                                {summaryFilename ||
+                                    note?.original_filename ||
+                                    "this file"}
                             </h3>
 
                             <button
@@ -344,6 +365,19 @@ export default function NoteDetailsPage() {
                                 Download Summary
                             </button>
                         </div>
+
+                        {summaryTime && (
+                            <div
+                                style={{
+                                    marginBottom: 12,
+                                    color: "#2563eb",
+                                    fontWeight: 600,
+                                    fontSize: "14px",
+                                }}
+                            >
+                                ⏱️ Generated in {summaryTime} seconds
+                            </div>
+                        )}
 
                         <div
                             style={{
