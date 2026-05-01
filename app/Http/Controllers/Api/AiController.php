@@ -363,10 +363,13 @@ class AiController extends Controller
     }
     public function summarize(Request $request)
     {
+        @set_time_limit(600);
+        ini_set('max_execution_time', '600');
+        ini_set('default_socket_timeout', '600');
+
         $validated = $request->validate([
             'note_id' => ['required', 'integer', 'min:1'],
         ]);
-
         $noteId = (int) $validated['note_id'];
 
         try {
@@ -421,16 +424,25 @@ class AiController extends Controller
 
             $pythonUrl = env('SUMMARY_API_URL', 'http://127.0.0.1:8002/summarize');
 
-            // Using a very long timeout for local AI generation
-            $pythonResponse = Http::connectTimeout(10)
-                ->timeout(600) // Increased to 10 minutes
-                ->attach('file', file_get_contents($fullPath), $filename)
-                ->post($pythonUrl);
+            // Determine if we send file or text
+            $response = null;
+            if ($note->source_type === 'text' || !empty($note->text_content)) {
+                $response = Http::connectTimeout(10)
+                    ->timeout(600)
+                    ->post($pythonUrl, [
+                        'text' => $note->text_content ?: $note->description ?: ''
+                    ]);
+            } else {
+                $response = Http::connectTimeout(10)
+                    ->timeout(600)
+                    ->attach('file', file_get_contents($fullPath), $filename)
+                    ->post($pythonUrl);
+            }
 
-            if (! $pythonResponse->successful()) {
+            if (!$response->successful()) {
                 Log::error('Python summary API failed', [
-                    'status' => $pythonResponse->status(),
-                    'body' => $pythonResponse->body(),
+                    'status' => $response->status(),
+                    'body' => $response->body(),
                 ]);
 
                 return response()->json([
@@ -440,16 +452,12 @@ class AiController extends Controller
                 ], 502);
             }
 
-            $summary = trim((string) (
-                $pythonResponse->json('summary')
-                ?? $pythonResponse->json('output')
-                ?? ''
-            ));
+            $summary = trim((string) $response->json('summary', ''));
 
             if ($summary === '') {
                 Log::warning('Python summary API returned empty summary', [
                     'note_id' => $noteId,
-                    'body' => $pythonResponse->json(),
+                    'body' => $response->json(),
                 ]);
 
                 return response()->json([
@@ -713,66 +721,51 @@ class AiController extends Controller
     private function handleChatSummary(Request $request, Note $note, string $userMessage)
     {
         try {
-            $storedPath = (string) ($note->stored_path ?? $note->file_path ?? '');
-            $originalText = (string) ($note->extracted_text ?: $note->text_content ?: $note->description ?: '');
+            $pythonUrl = env('SUMMARY_API_URL', 'http://127.0.0.1:8002/summarize');
+            $response = null;
 
-            $isBullets = str_contains(mb_strtolower($userMessage), 'points')
-                || str_contains(mb_strtolower($userMessage), 'bullets');
-
-            $summaryText = '';
-
-            if (trim($originalText) !== '') {
-                $prompt = $this->buildSummaryPrompt($originalText, $isBullets);
-
-                $initial = $this->ollamaGenerate($prompt, [
-                    'temperature' => 0.3,
-                    'num_predict' => 800,
-                ]);
-
-                $summaryText = $this->polishSummary($initial);
-            } elseif ($storedPath !== '') {
+            if ($note->source_type === 'text' || !empty($note->text_content)) {
+                $response = Http::connectTimeout(10)
+                    ->timeout(300)
+                    ->post($pythonUrl, [
+                        'human_input' => $note->text_content ?: $note->description ?: ''
+                    ]);
+            } else {
                 $disk = Storage::disk('private');
+                $storedPath = (string) ($note->stored_path ?? $note->file_path ?? '');
 
                 if ($disk->exists($storedPath)) {
-                    $pythonResponse = Http::connectTimeout(10)
+                    $response = Http::connectTimeout(10)
                         ->timeout(300)
-                        ->attach(
-                            'uploaded_file',
-                            file_get_contents($disk->path($storedPath)),
-                            basename($storedPath)
-                        )
-                        ->post(env('SUMMARY_API_URL', 'http://127.0.0.1:8002/file/upload'));
-
-                    if ($pythonResponse->successful()) {
-                        $summaryText = trim((string) (
-                            $pythonResponse->json('summary')
-                            ?? $pythonResponse->json('output')
-                            ?? ''
-                        ));
-                    }
+                        ->attach('file', file_get_contents($disk->path($storedPath)), basename($storedPath))
+                        ->post($pythonUrl);
                 }
             }
 
-            if (trim($summaryText) === '') {
-                return ApiResponse::success([
-                    'reply' => "I'm sorry, I couldn't generate a summary for this note right now."
-                ], 'OK');
+            if ($response && $response->successful()) {
+                $summaryText = trim((string) $response->json('summary', ''));
+
+                if ($summaryText !== '') {
+                    $saved = Summary::create([
+                        'user_id' => $request->user()->id,
+                        'note_id' => $note->id,
+                        'title' => 'Summary of ' . ($note->title ?: 'Note #' . $note->id),
+                        'source_type' => $note->source_type ?: 'text',
+                        'summary_text' => $summaryText,
+                    ]);
+
+                    return ApiResponse::success([
+                        'type' => 'summary',
+                        'reply' => $summaryText . "\n\n✨ _Saved to MySummaries_",
+                        'summary_id' => $saved->id,
+                        'saved_to_my_summaries' => true,
+                    ], 'Summary generated and saved.');
+                }
             }
 
-            $saved = Summary::create([
-                'user_id' => $request->user()->id,
-                'note_id' => $note->id,
-                'title' => 'Summary of ' . ($note->title ?: 'Note #' . $note->id),
-                'source_type' => $note->source_type ?: 'text',
-                'summary_text' => $summaryText,
-            ]);
-
             return ApiResponse::success([
-                'type' => 'summary',
-                'reply' => $summaryText . "\n\n✨ _Saved to MySummaries_",
-                'summary_id' => $saved->id,
-                'saved_to_my_summaries' => true,
-            ], 'Summary generated and saved.');
+                'reply' => "I'm sorry, I couldn't generate a summary for this note right now."
+            ], 'OK');
         } catch (\Throwable $e) {
             Log::error('Chat summary error', [
                 'message' => $e->getMessage(),

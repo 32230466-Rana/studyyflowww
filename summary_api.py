@@ -1,101 +1,167 @@
-import os
-import fitz  # PyMuPDF
-import shutil
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import requests
 import time
-import httpx
-import re
-from fastapi import FastAPI, UploadFile, File
+import os
 
 app = FastAPI(title="StudyFlow Fast Summary API")
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-DEFAULT_MODEL = "phi3:mini"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-def extract_text_from_pdf(file_path: str) -> str:
-    text = ""
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:1.7b")
+
+
+def clean_text(text: str) -> str:
+    text = text or ""
+    text = text.replace("\x00", " ")
+    lines = [line.strip() for line in text.splitlines()]
+    lines = [line for line in lines if line]
+    return "\n".join(lines).strip()
+
+
+def extract_text_from_pdf_bytes(file_bytes: bytes) -> str:
     try:
-        doc = fitz.open(file_path)
-        for page in doc:
-            text += page.get_text("text") + "\n"
-        doc.close()
-    except Exception as e:
-        print(f"Extraction error: {e}")
-    text = re.sub(r'\s+', ' ', text).strip()
-    if len(text) > 15000:
-        text = text[:15000]
-    return text
-
-@app.post("/summarize")
-async def summarize_pdf(file: UploadFile = File(...)):
-    start_time = time.time()
-
-    file_path = f"temp_{file.filename}"
-    try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        text = extract_text_from_pdf(file_path)
-
-        if not text.strip():
-            return {
-                "success": False,
-                "summary": "Could not extract text from the PDF."
-            }
-
-        prompt = (
-            "You are an expert academic writer. Your task is to summarize the following document.\n\n"
-            "RULES:\n"
-            "1. You MUST generate ONLY ONE continuous paragraph.\n"
-            "2. Ensure exceptional academic quality suitable for a graduation project.\n"
-            "3. Focus ONLY on the core concepts, removing any irrelevant noise.\n"
-            "4. NEVER use bullet points, lists, headings, or structural formatting.\n"
-            "5. The paragraph should be well-structured, coherent, and highly readable.\n\n"
-            "DOCUMENT TEXT:\n"
-            f"{text}"
+        import fitz  # PyMuPDF
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="PyMuPDF is not installed. Run: pip install pymupdf"
         )
 
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            response = await client.post(
-                OLLAMA_URL,
-                json={
-                    "model": DEFAULT_MODEL,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.3,
-                        "top_p": 0.9,
-                    }
-                }
-            )
-            response.raise_for_status()
-            data = response.json()
-            summary_text = data.get("response", "").strip()
+    text_parts = []
 
-            summary_text = summary_text.replace("\n", " ")
-            summary_text = re.sub(r'\s+', ' ', summary_text).strip()
+    with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+        for page in doc:
+            page_text = page.get_text("text")
+            if page_text:
+                text_parts.append(page_text)
 
-            end_time = time.time()
-            duration = round(end_time - start_time, 2)
+    return clean_text("\n\n".join(text_parts))
 
-            final_summary = f"⏱️ Generated in {duration} seconds. \n\n{summary_text}"
 
-            return {
-                "success": True,
-                "summary": final_summary
+def summarize_with_ollama(text: str) -> str:
+    text = clean_text(text)
+
+    if not text:
+        return "Could not extract or find text to summarize."
+
+    text = text[:12000]
+
+    prompt = f"""
+You are an academic study assistant.
+
+Summarize the following study material clearly and naturally.
+
+Rules:
+- Do not copy long sentences from the source.
+- Do not invent information.
+- Focus on the main ideas.
+- Write in a student-friendly academic style.
+- Keep the summary concise but useful.
+
+STUDY MATERIAL:
+{text}
+
+SUMMARY:
+""".strip()
+
+    response = requests.post(
+        OLLAMA_URL,
+        json={
+            "model": OLLAMA_MODEL,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.2,
+                "num_predict": 350
             }
+        },
+        timeout=180
+    )
 
-    except Exception as e:
-        import traceback
-        print(f"Error during summarization: {e}")
-        print(traceback.format_exc())
-        return {
-            "success": False,
-            "summary": "An error occurred during summarization."
-        }
-    finally:
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except:
-                pass
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Ollama failed: {response.text}"
+        )
 
+    data = response.json()
+    summary = clean_text(data.get("response", ""))
+
+    if not summary:
+        return "Summary service returned an empty result."
+
+    return summary
+
+
+@app.post("/summarize")
+async def summarize(request: Request):
+    start_time = time.time()
+
+    text = ""
+    filename = None
+
+    content_type = request.headers.get("content-type", "")
+
+    # Case 1: JSON request from test or Laravel text note
+    if "application/json" in content_type:
+        data = await request.json()
+        text = (
+            data.get("text")
+            or data.get("human_input")
+            or data.get("content")
+            or ""
+        )
+
+    # Case 2: File upload from Laravel PDF note
+    elif "multipart/form-data" in content_type:
+        form = await request.form()
+        uploaded_file = form.get("file")
+
+        if uploaded_file:
+            filename = uploaded_file.filename
+            file_bytes = await uploaded_file.read()
+
+            if filename and filename.lower().endswith(".pdf"):
+                text = extract_text_from_pdf_bytes(file_bytes)
+            else:
+                try:
+                    text = file_bytes.decode("utf-8", errors="ignore")
+                except Exception:
+                    text = ""
+
+        if not text:
+            text = form.get("text") or form.get("human_input") or ""
+
+    # Case 3: Raw body fallback
+    else:
+        body = await request.body()
+        text = body.decode("utf-8", errors="ignore")
+
+    text = clean_text(text)
+    summary = summarize_with_ollama(text)
+
+    processing_time = round(time.time() - start_time, 2)
+
+    return {
+        "summary": summary,
+        "filename": filename,
+        "processing_time_seconds": processing_time,
+        "processing_time_minutes": round(processing_time / 60, 2)
+    }
+
+
+@app.get("/")
+def root():
+    return {
+        "status": "ok",
+        "service": "StudyFlow Summary API",
+        "endpoint": "/summarize"
+    }
