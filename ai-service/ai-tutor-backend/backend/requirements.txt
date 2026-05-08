@@ -1,0 +1,17 @@
+fastapi~=0.116.1
+uvicorn[standard]~=0.35.0
+python-multipart
+sqlalchemy~=2.0.41
+openai~=1.97.1
+boto3~=1.39.13
+python-docx~=1.2.0
+PyMuPDF
+python-dotenv~=1.1.1
+pydantic~=2.11.7
+pymysql
+pdfplumber
+scikit-learn
+# Testing
+pytest~=8.3.5
+pytest-asyncio~=0.24.0
+httpx~=0.28.1

@@ -1,9 +1,10 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import requests
 import time
 import os
-from bs4 import BeautifulSoup
+import re
 
 app = FastAPI(title="StudyFlow Fast Summary API")
 
@@ -19,9 +20,56 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:1.7b")
 
 
+class ConversationInput(BaseModel):
+    human_input: str
+
+
+@app.post("/conversation")
+async def conversation(input_data: ConversationInput):
+    """
+    Compatibility endpoint for direct text summarization.
+    """
+    text = clean_text(input_data.human_input)
+    summary = summarize_with_ollama(text)
+
+    return {
+        "output": summary,
+        "status": "success"
+    }
+
+
+@app.post("/file/upload")
+async def file_upload(pdf_file: UploadFile = File(...)):
+    """
+    Compatibility endpoint for file uploads.
+    """
+    filename = pdf_file.filename
+    file_bytes = await pdf_file.read()
+
+    if filename and filename.lower().endswith(".pdf"):
+        text = extract_text_from_pdf_bytes(file_bytes)
+    else:
+        try:
+            text = file_bytes.decode("utf-8", errors="ignore")
+        except Exception:
+            text = ""
+
+    text = clean_text(text)
+    summary = summarize_with_ollama(text)
+
+    return {
+        "summary": summary,
+        "filename": filename,
+        "status": "success"
+    }
+
+
 def clean_text(text: str) -> str:
     text = text or ""
     text = text.replace("\x00", " ")
+    # Remove excessive symbols and repetitive markers common in PDFs
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]', '', text)
+    text = re.sub(r'\s+', ' ', text)
     lines = [line.strip() for line in text.splitlines()]
     lines = [line for line in lines if line]
     return "\n".join(lines).strip()
@@ -51,21 +99,15 @@ def summarize_with_ollama(text: str) -> str:
     text = clean_text(text)
 
     if not text:
+        print("--- DEBUG: EMPTY TEXT RECEIVED ---")
         return "Could not extract or find text to summarize."
 
-    text = text[:12000]
+    # Optimization: Reduce text size to 5000 chars and increase timeout
+    text = text[:5000]
 
     prompt = f"""
-You are an academic study assistant.
-
-Summarize the following study material clearly and naturally.
-
-Rules:
-- Do not copy long sentences from the source.
-- Do not invent information.
-- Focus on the main ideas.
-- Write in a student-friendly academic style.
-- Keep the summary concise but useful.
+Summarize the following study material briefly.
+Focus on key concepts and main ideas.
 
 STUDY MATERIAL:
 {text}
@@ -73,19 +115,30 @@ STUDY MATERIAL:
 SUMMARY:
 """.strip()
 
-    response = requests.post(
-        OLLAMA_URL,
-        json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": 0.2,
-                "num_predict": 350
-            }
-        },
-        timeout=180
-    )
+    print(f"--- DEBUG: SENDING TO OLLAMA ---")
+    print(f"URL: {OLLAMA_URL}")
+    print(f"Model: {OLLAMA_MODEL}")
+    print(f"Text Length: {len(text)}")
+
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                # Removed options that might force 'thinking' or length issues
+            },
+            timeout=240
+        )
+    except requests.exceptions.Timeout:
+        print("--- DEBUG: OLLAMA TIMEOUT ---")
+        return "The summary service timed out. The document might be too complex for the current model. Please try a shorter selection."
+    except Exception as e:
+        print(f"--- DEBUG: OLLAMA ERROR: {str(e)} ---")
+        return f"An error occurred: {str(e)}"
+
+    print(f"--- DEBUG: OLLAMA STATUS: {response.status_code} ---")
 
     if response.status_code != 200:
         raise HTTPException(
@@ -94,31 +147,28 @@ SUMMARY:
         )
 
     data = response.json()
-    summary = clean_text(data.get("response", ""))
+    
+    # Logic to handle both 'response' and 'thinking' if available
+    raw_response = data.get("response", "")
+    thinking = data.get("thinking", "")
+    
+    if not raw_response.strip() and thinking.strip():
+        print("--- DEBUG: MODEL RETURNED THINKING BUT NO RESPONSE ---")
+        # Use thinking as fallback if response is empty
+        summary = clean_text(thinking)
+    else:
+        summary = clean_text(raw_response)
+
+    print(f"--- DEBUG: OLLAMA REQUEST ---")
+    print(f"Model: {OLLAMA_MODEL}")
+    print(f"Prompt Length: {len(prompt)}")
+    print(f"--- DEBUG: OLLAMA RESPONSE ---")
+    print(f"Summary Length: {len(summary)}")
 
     if not summary:
-        return "Summary service returned an empty result."
+        return f"Summary service returned an empty result. Data keys: {list(data.keys())}"
 
     return summary
-
-
-def fetch_url_content(url: str) -> str:
-    try:
-        response = requests.get(url, timeout=15, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        })
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, "html.parser")
-        
-        # Remove unwanted elements
-        for script_or_style in soup(["script", "style", "nav", "footer", "header", "aside"]):
-            script_or_style.decompose()
-            
-        text = soup.get_text(separator="\n")
-        return clean_text(text)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {str(e)}")
 
 
 @app.post("/summarize")
@@ -133,17 +183,12 @@ async def summarize(request: Request):
     # Case 1: JSON request from test or Laravel text note
     if "application/json" in content_type:
         data = await request.json()
-        
-        url = data.get("url")
-        if url:
-            text = fetch_url_content(url)
-        else:
-            text = (
-                data.get("text")
-                or data.get("human_input")
-                or data.get("content")
-                or ""
-            )
+        text = (
+            data.get("text")
+            or data.get("human_input")
+            or data.get("content")
+            or ""
+        )
 
     # Case 2: File upload from Laravel PDF note
     elif "multipart/form-data" in content_type:
@@ -172,14 +217,6 @@ async def summarize(request: Request):
 
     text = clean_text(text)
     summary = summarize_with_ollama(text)
-
-    duration = time.time() - start_time
-
-    return {
-        "summary": summary,
-        "processing_time_seconds": round(duration, 2),
-        "processing_time_minutes": round(duration / 60, 2),
-    }
 
     processing_time = round(time.time() - start_time, 2)
 

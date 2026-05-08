@@ -22,3 +22,13 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+# Python virtual environments
+.venv/
+**/.venv/
+**/.venv-*/
+**/venv/
+__pycache__/
+*.pyc
+
+# Local AI backend backups
+ai-service/askpdf-backend_MY_BROKEN_BACKUP/

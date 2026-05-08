@@ -28,4 +28,8 @@ return [
         'model' => env('QUIZ_API_MODEL'),
         'timeout' => (int) env('QUIZ_API_TIMEOUT', 120),
     ],
+    'ai_tutor' => [
+        'url' => env('AI_TUTOR_URL', 'http://127.0.0.1:8015'),
+        'timeout' => env('AI_TUTOR_TIMEOUT', 700),
+    ],
 ];

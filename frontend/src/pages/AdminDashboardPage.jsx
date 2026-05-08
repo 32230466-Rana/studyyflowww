@@ -1,552 +1,1652 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axiosClient from "../api/axiosClient";
-import { PageSpinner } from "../components/Spinner.jsx";
 
-function formatDate(value) {
-    if (!value) return "";
-    try {
-        return new Date(value).toLocaleDateString();
-    } catch {
-        return String(value);
+const emptyDashboard = {
+  totalUsers: 0,
+  totalNotes: 0,
+  totalAdmins: 0,
+  featuredNotes: 0,
+  aiSummaries: 0,
+  activeUsers: 0,
+  aiRequests: 0,
+  quizzesCreated: 0,
+  filesUploaded: 0,
+  todayUsers: 0,
+  todayNotes: 0,
+  todayAiUsage: 0,
+  userGrowth: [0, 0, 0, 0, 0, 0, 0],
+  notesGrowth: [0, 0, 0, 0, 0, 0, 0],
+  aiUsage: [0, 0, 0, 0, 0, 0, 0],
+  quizGrowth: [0, 0, 0, 0, 0, 0, 0],
+  summaryGrowth: [0, 0, 0, 0, 0, 0, 0],
+  recentUsers: [],
+  recentNotes: [],
+  recentQuizzes: [],
+  recentSummaries: [],
+  recentActivity: [],
+};
+
+const getValue = (obj, path) => {
+  return path.split(".").reduce((acc, key) => {
+    if (acc && Object.prototype.hasOwnProperty.call(acc, key)) {
+      return acc[key];
     }
-}
 
-function useCountUp(target, duration = 900) {
-    const [value, setValue] = useState(0);
+    return undefined;
+  }, obj);
+};
 
-    useEffect(() => {
-        let raf = 0;
-        const start = performance.now();
+const pick = (obj, paths, fallback = null) => {
+  for (const path of paths) {
+    const value = getValue(obj, path);
 
-        const tick = (now) => {
-            const progress = Math.min((now - start) / duration, 1);
-            const eased = 1 - Math.pow(1 - progress, 3);
-            setValue(Math.round(eased * (Number(target) || 0)));
-            if (progress < 1) raf = requestAnimationFrame(tick);
-        };
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+  }
 
-        raf = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(raf);
-    }, [target, duration]);
+  return fallback;
+};
 
+const pickNumber = (obj, paths, fallback = 0) => {
+  const value = pick(obj, paths, fallback);
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const pickArray = (obj, paths, fallback = []) => {
+  const value = pick(obj, paths, fallback);
+
+  return Array.isArray(value) ? value : fallback;
+};
+
+const normalizeSeries = (series, fallback) => {
+  if (!Array.isArray(series) || series.length === 0) {
+    return fallback;
+  }
+
+  return series.map((item) => {
+    if (typeof item === "number") {
+      return item;
+    }
+
+    if (item && typeof item === "object") {
+      return Number(
+        item.count ??
+          item.total ??
+          item.value ??
+          item.users ??
+          item.notes ??
+          item.summaries ??
+          item.quizzes ??
+          0
+      );
+    }
+
+    return 0;
+  });
+};
+
+const normalizeDashboard = (payload) => {
+  const root = payload?.data ?? payload ?? {};
+
+  return {
+    totalUsers: pickNumber(root, [
+      "totalUsers",
+      "total_users",
+      "stats.totalUsers",
+      "stats.total_users",
+      "counts.totalUsers",
+      "counts.total_users",
+    ]),
+
+    totalNotes: pickNumber(root, [
+      "totalNotes",
+      "total_notes",
+      "stats.totalNotes",
+      "stats.total_notes",
+      "counts.totalNotes",
+      "counts.total_notes",
+    ]),
+
+    totalAdmins: pickNumber(root, [
+      "totalAdmins",
+      "total_admins",
+      "stats.totalAdmins",
+      "stats.total_admins",
+      "counts.totalAdmins",
+      "counts.total_admins",
+    ]),
+
+    featuredNotes: pickNumber(root, [
+      "featuredNotes",
+      "featured_notes",
+      "stats.featuredNotes",
+      "stats.featured_notes",
+    ]),
+
+    aiSummaries: pickNumber(root, [
+      "aiSummaries",
+      "ai_summaries",
+      "summaryCount",
+      "summary_count",
+      "stats.aiSummaries",
+      "stats.ai_summaries",
+      "stats.summary_count",
+    ]),
+
+    activeUsers: pickNumber(root, [
+      "activeUsers",
+      "active_users",
+      "stats.activeUsers",
+      "stats.active_users",
+    ]),
+
+    aiRequests: pickNumber(root, [
+      "aiRequests",
+      "ai_requests",
+      "stats.aiRequests",
+      "stats.ai_requests",
+      "stats.ai_summaries",
+      "aiSummaries",
+      "ai_summaries",
+    ]),
+
+    quizzesCreated: pickNumber(root, [
+      "quizzesCreated",
+      "quizzes_created",
+      "quizCount",
+      "quiz_count",
+      "stats.quizzesCreated",
+      "stats.quizzes_created",
+      "stats.quiz_count",
+    ]),
+
+    filesUploaded: pickNumber(root, [
+      "filesUploaded",
+      "files_uploaded",
+      "stats.filesUploaded",
+      "stats.files_uploaded",
+    ]),
+
+    todayUsers: pickNumber(root, [
+      "todayUsers",
+      "today_users",
+      "stats.todayUsers",
+      "stats.today_users",
+    ]),
+
+    todayNotes: pickNumber(root, [
+      "todayNotes",
+      "today_notes",
+      "stats.todayNotes",
+      "stats.today_notes",
+    ]),
+
+    todayAiUsage: pickNumber(root, [
+      "todayAiUsage",
+      "today_ai_usage",
+      "stats.todayAiUsage",
+      "stats.today_ai_usage",
+    ]),
+
+    userGrowth: normalizeSeries(
+      pickArray(root, [
+        "userGrowth",
+        "user_growth",
+        "charts.userGrowth",
+        "charts.user_growth",
+      ]),
+      emptyDashboard.userGrowth
+    ),
+
+    notesGrowth: normalizeSeries(
+      pickArray(root, [
+        "notesGrowth",
+        "notes_growth",
+        "charts.notesGrowth",
+        "charts.notes_growth",
+      ]),
+      emptyDashboard.notesGrowth
+    ),
+
+    aiUsage: normalizeSeries(
+      pickArray(root, [
+        "aiUsage",
+        "ai_usage",
+        "charts.aiUsage",
+        "charts.ai_usage",
+      ]),
+      emptyDashboard.aiUsage
+    ),
+
+    quizGrowth: normalizeSeries(
+      pickArray(root, [
+        "quizGrowth",
+        "quiz_growth",
+        "charts.quizGrowth",
+        "charts.quiz_growth",
+      ]),
+      emptyDashboard.quizGrowth
+    ),
+
+    summaryGrowth: normalizeSeries(
+      pickArray(root, [
+        "summaryGrowth",
+        "summary_growth",
+        "charts.summaryGrowth",
+        "charts.summary_growth",
+      ]),
+      emptyDashboard.summaryGrowth
+    ),
+
+    recentUsers: pickArray(root, [
+      "recentUsers",
+      "recent_users",
+      "latestUsers",
+      "latest_users",
+      "users",
+    ]),
+
+    recentNotes: pickArray(root, [
+      "recentNotes",
+      "recent_notes",
+      "latestNotes",
+      "latest_notes",
+      "notes",
+    ]),
+
+    recentQuizzes: pickArray(root, [
+      "recentQuizzes",
+      "recent_quizzes",
+      "latestQuizzes",
+      "latest_quizzes",
+      "quizzes",
+    ]),
+
+    recentSummaries: pickArray(root, [
+      "recentSummaries",
+      "recent_summaries",
+      "latestSummaries",
+      "latest_summaries",
+      "summaries",
+    ]),
+
+    recentActivity: pickArray(root, [
+      "recentActivity",
+      "recent_activity",
+      "activities",
+      "latestActivity",
+      "latest_activity",
+    ]),
+  };
+};
+
+const formatDate = (value) => {
+  if (!value) return "-";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
     return value;
-}
+  }
 
-function StatCard({ icon, iconClass, value, label }) {
-    const animated = useCountUp(value);
+  return date.toLocaleDateString();
+};
 
-    return (
-        <div className="stat-card">
-            <div className={`stat-icon ${iconClass}`}>{icon}</div>
-            <div className="stat-value">{animated}</div>
-            <div className="stat-label">{label}</div>
-        </div>
-    );
-}
+const FeatureCard = ({ title, icon, points, variant = "blue", onClick }) => {
+  return (
+    <button
+      type="button"
+      className={`admin-feature-card ${variant}`}
+      onClick={onClick}
+    >
+      <div className="admin-feature-card-head">
+        <h3>{title}</h3>
+        <span>{icon}</span>
+      </div>
 
-function SparklesIcon() {
-    return (
-        <svg
-            width="18"
-            height="18"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-        >
-            <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
-            />
-        </svg>
-    );
-}
+      <div className="admin-feature-line" />
 
-function UsersIcon() {
-    return (
-        <svg
-            width="18"
-            height="18"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-        >
-            <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M17 20h5v-2a4 4 0 00-4-4h-1m-4 6H2v-2a4 4 0 014-4h7m4-4a4 4 0 11-8 0 4 4 0 018 0zm6 4a3 3 0 10-6 0 3 3 0 006 0z"
-            />
-        </svg>
-    );
-}
+      <ul>
+        {points.map((point, index) => (
+          <li key={point}>
+            <span className={`dot dot-${index + 1}`} />
+            {point}
+          </li>
+        ))}
+      </ul>
+    </button>
+  );
+};
 
-function NotesIcon() {
-    return (
-        <svg
-            width="18"
-            height="18"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-        >
-            <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-        </svg>
-    );
-}
+const MetricBox = ({ icon, label, value }) => {
+  return (
+    <div className="admin-metric-box">
+      <span className="metric-icon">{icon}</span>
 
-function MessageIcon() {
-    return (
-        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-            <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M8 10h8m-8 4h5m7 6l-4-4H6a4 4 0 01-4-4V7a4 4 0 014-4h12a4 4 0 014 4v9a4 4 0 01-4 4h-2z"
-            />
-        </svg>
-    );
-}
+      <div>
+        <strong>{value}</strong>
+        <p>{label}</p>
+      </div>
+    </div>
+  );
+};
 
-function ShieldIcon() {
-    return (
-        <svg
-            width="18"
-            height="18"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-        >
-            <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 3l8 4v6c0 5-3.5 9.5-8 10-4.5-.5-8-5-8-10V7l8-4z"
-            />
-        </svg>
-    );
-}
+const SmallStatCard = ({ icon, label, value, variant = "blue" }) => {
+  return (
+    <div className={`small-stat-card ${variant}`}>
+      <span>{icon}</span>
 
-function StarIcon() {
-    return (
-        <svg
-            width="18"
-            height="18"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-        >
-            <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.967a1 1 0 00.95.69h4.173c.969 0 1.371 1.24.588 1.81l-3.376 2.453a1 1 0 00-.364 1.118l1.286 3.967c.3.921-.755 1.688-1.538 1.118l-3.376-2.453a1 1 0 00-1.176 0l-3.376 2.453c-.783.57-1.838-.197-1.538-1.118l1.286-3.967a1 1 0 00-.364-1.118L2.98 9.394c-.783-.57-.38-1.81.588-1.81h4.173a1 1 0 00.95-.69l1.286-3.967z"
-            />
-        </svg>
-    );
-}
+      <div>
+        <strong>{value}</strong>
+        <p>{label}</p>
+      </div>
+    </div>
+  );
+};
 
-function BoltIcon() {
-    return (
-        <svg
-            width="18"
-            height="18"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2"
-        >
-            <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M13 10V3L4 14h7v7l9-11h-7z"
-            />
-        </svg>
-    );
-}
+const MiniLineChart = ({ values = [] }) => {
+  const safeValues = values.length > 0 ? values : [0, 0, 0, 0, 0, 0, 0];
+  const max = Math.max(...safeValues, 1);
+  const width = 420;
+  const height = 120;
+  const gap = safeValues.length > 1 ? width / (safeValues.length - 1) : width;
 
-function clamp01(n) {
-    if (Number.isNaN(n)) return 0;
-    return Math.max(0, Math.min(1, n));
-}
+  const points = safeValues
+    .map((value, index) => {
+      const x = index * gap;
+      const y = height - (Number(value || 0) / max) * 90 - 15;
 
-function MiniLineChart({ labels, values }) {
-    const w = 520;
-    const h = 140;
-    const pad = 12;
+      return `${x},${y}`;
+    })
+    .join(" ");
 
-    const safeValues = Array.isArray(values) ? values.map((v) => Number(v) || 0) : [];
-    const max = Math.max(1, ...safeValues);
+  return (
+    <div className="mini-chart">
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+        <polyline points={points} fill="none" strokeWidth="5" />
 
-    const points = safeValues.map((v, i) => {
-        const x = pad + (i * (w - pad * 2)) / Math.max(1, safeValues.length - 1);
-        const y = pad + (1 - clamp01(v / max)) * (h - pad * 2);
-        return { x, y };
-    });
+        {safeValues.map((value, index) => {
+          const x = index * gap;
+          const y = height - (Number(value || 0) / max) * 90 - 15;
 
-    const d = points
-        .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
-        .join(" ");
+          return <circle key={`${value}-${index}`} cx={x} cy={y} r="5" />;
+        })}
+      </svg>
+    </div>
+  );
+};
 
-    const areaD = `${d} L${pad + (w - pad * 2)} ${h - pad} L${pad} ${h - pad} Z`;
+const MiniBarChart = ({ values = [] }) => {
+  const safeValues = values.length > 0 ? values : [0, 0, 0, 0, 0, 0, 0];
+  const max = Math.max(...safeValues, 1);
 
-    return (
-        <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="140" role="img">
-            <defs>
-                <linearGradient id="sfLine" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.35" />
-                    <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0.02" />
-                </linearGradient>
-            </defs>
-            <path d={areaD} fill="url(#sfLine)" />
-            <path d={d} fill="none" stroke="var(--color-accent)" strokeWidth="2.5" />
-            {points.map((p, idx) => (
-                <circle key={idx} cx={p.x} cy={p.y} r="2.5" fill="var(--color-accent)" />
-            ))}
-        </svg>
-    );
-}
+  return (
+    <div className="mini-bars">
+      {safeValues.map((value, index) => (
+        <span
+          key={`${value}-${index}`}
+          style={{
+            height: `${Math.max(12, (Number(value || 0) / max) * 100)}%`,
+          }}
+        />
+      ))}
+    </div>
+  );
+};
 
-function MiniBarChart({ labels, values }) {
-    const w = 520;
-    const h = 140;
-    const pad = 12;
-
-    const safeValues = Array.isArray(values) ? values.map((v) => Number(v) || 0) : [];
-    const max = Math.max(1, ...safeValues);
-
-    const barCount = Math.max(1, safeValues.length);
-    const gap = 6;
-    const barW = (w - pad * 2 - gap * (barCount - 1)) / barCount;
-
-    return (
-        <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="140" role="img">
-            {safeValues.map((v, i) => {
-                const bh = clamp01(v / max) * (h - pad * 2);
-                const x = pad + i * (barW + gap);
-                const y = h - pad - bh;
-
-                return (
-                    <rect
-                        key={i}
-                        x={x}
-                        y={y}
-                        width={Math.max(2, barW)}
-                        height={bh}
-                        rx="6"
-                        fill="var(--color-accent)"
-                        opacity="0.85"
-                    />
-                );
-            })}
-        </svg>
-    );
-}
-
-function ChartCard({ title, subtitle, children }) {
-    return (
-        <div className="card" style={{ padding: 18 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                <div>
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>{title}</div>
-                    {subtitle ? (
-                        <div style={{ fontSize: 12, color: "var(--color-muted)", marginTop: 2 }}>
-                            {subtitle}
-                        </div>
-                    ) : null}
-                </div>
-            </div>
-            <div style={{ marginTop: 10 }}>{children}</div>
-        </div>
-    );
-}
-
-function TableCard({ title, columns, rows, emptyText }) {
-    return (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-            <div
-                style={{
-                    padding: "16px 18px",
-                    borderBottom: "1px solid var(--color-border)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 12,
-                }}
-            >
-                <div style={{ fontSize: 14, fontWeight: 700 }}>{title}</div>
-            </div>
-
-            <div style={{ overflowX: "auto" }}>
-                <table
-                    style={{
-                        width: "100%",
-                        borderCollapse: "collapse",
-                        fontSize: 13,
-                    }}
-                >
-                    <thead>
-                        <tr style={{ background: "var(--color-bg)" }}>
-                            {columns.map((c) => (
-                                <th
-                                    key={c}
-                                    style={{
-                                        textAlign: "left",
-                                        padding: "12px 14px",
-                                        fontSize: 11.5,
-                                        letterSpacing: "0.02em",
-                                        color: "var(--color-muted)",
-                                        fontWeight: 700,
-                                        whiteSpace: "nowrap",
-                                        borderBottom: "1px solid var(--color-border)",
-                                    }}
-                                >
-                                    {c}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-
-                    <tbody>
-                        {rows.length === 0 ? (
-                            <tr>
-                                <td
-                                    colSpan={columns.length}
-                                    style={{ padding: 18, color: "var(--color-muted)" }}
-                                >
-                                    {emptyText}
-                                </td>
-                            </tr>
-                        ) : (
-                            rows.map((r, idx) => (
-                                <tr
-                                    key={idx}
-                                    style={{
-                                        borderBottom:
-                                            idx === rows.length - 1
-                                                ? "none"
-                                                : "1px solid var(--color-border)",
-                                    }}
-                                >
-                                    {r.map((cell, j) => (
-                                        <td
-                                            key={j}
-                                            style={{
-                                                padding: "12px 14px",
-                                                verticalAlign: "top",
-                                                whiteSpace: "nowrap",
-                                            }}
-                                        >
-                                            {cell}
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-}
+const StatusPill = ({ children, type = "active" }) => {
+  return <span className={`status-pill ${type}`}>{children}</span>;
+};
 
 export default function AdminDashboardPage() {
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
-    const [payload, setPayload] = useState(null);
+  const navigate = useNavigate();
 
-    const load = async () => {
-        setLoading(true);
-        setError("");
-        try {
-            const res = await axiosClient.get("/admin/dashboard");
-            setPayload(res.data?.data || null);
-        } catch (e) {
-            setError(e?.response?.data?.message || "Failed to load admin dashboard.");
-        } finally {
-            setLoading(false);
+  const [dashboard, setDashboard] = useState(emptyDashboard);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadDashboard = async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await axiosClient.get("/admin/dashboard");
+      setDashboard(normalizeDashboard(response.data));
+    } catch (err) {
+      console.error("Failed to load admin dashboard:", err);
+      setDashboard(emptyDashboard);
+      setError(
+        "Dashboard data could not be loaded. The page design is still displayed."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+  }, []);
+
+  const topStats = useMemo(
+    () => [
+      {
+        icon: "👥",
+        label: "Total Users",
+        value: dashboard.totalUsers,
+        variant: "blue",
+      },
+      {
+        icon: "📁",
+        label: "Total Notes",
+        value: dashboard.totalNotes,
+        variant: "purple",
+      },
+      {
+        icon: "🛡️",
+        label: "Total Admins",
+        value: dashboard.totalAdmins,
+        variant: "orange",
+      },
+      {
+        icon: "⭐",
+        label: "Featured Notes",
+        value: dashboard.featuredNotes,
+        variant: "green",
+      },
+      {
+        icon: "🤖",
+        label: "AI Summaries",
+        value: dashboard.aiSummaries,
+        variant: "purple",
+      },
+      {
+        icon: "⚡",
+        label: "Active Users",
+        value: dashboard.activeUsers,
+        variant: "green",
+      },
+      {
+        icon: "📝",
+        label: "Quizzes Created",
+        value: dashboard.quizzesCreated,
+        variant: "blue",
+      },
+      {
+        icon: "📤",
+        label: "Files Uploaded",
+        value: dashboard.filesUploaded || dashboard.totalNotes,
+        variant: "orange",
+      },
+    ],
+    [dashboard]
+  );
+
+  const analyticsMetrics = useMemo(
+    () => [
+      {
+        icon: "👥",
+        label: "Total Users",
+        value: dashboard.totalUsers,
+      },
+      {
+        icon: "📁",
+        label: "Total Notes",
+        value: dashboard.totalNotes,
+      },
+      {
+        icon: "🤖",
+        label: "AI Requests",
+        value: dashboard.aiRequests || dashboard.aiSummaries,
+      },
+      {
+        icon: "📝",
+        label: "Quizzes Created",
+        value: dashboard.quizzesCreated,
+      },
+    ],
+    [dashboard]
+  );
+
+  const featureCards = [
+    {
+      title: "User Management",
+      icon: "👤",
+      variant: "blue",
+      path: "/admin/users",
+      points: [
+        "Add / Update / Delete Users",
+        "Role Control Admin / Student",
+        "Search & Filters",
+      ],
+    },
+    {
+      title: "Notes Management",
+      icon: "📚",
+      variant: "green",
+      path: "/admin/notes",
+      points: ["View / Delete Notes", "Reprocess Notes", "File Filters & Status"],
+    },
+    {
+      title: "AI Management",
+      icon: "🤖",
+      variant: "purple",
+      path: "/admin",
+      points: ["Summary Stats", "Quiz Stats", "AI Usage Reports"],
+    },
+    {
+      title: "Quiz Management",
+      icon: "✅",
+      variant: "orange",
+      path: "/admin",
+      points: ["View / Edit Quizzes", "Regenerate Quizzes", "Difficulty Levels"],
+    },
+  ];
+
+  const bottomCards = [
+    {
+      title: "Announcements",
+      icon: "📣",
+      variant: "orange",
+      points: ["Post Updates", "Manage Alerts"],
+    },
+    {
+      title: "Featured Materials",
+      icon: "⭐",
+      variant: "green",
+      points: ["Highlight Notes", "Promote Content"],
+    },
+    {
+      title: "Reports & Feedback",
+      icon: "⚠️",
+      variant: "blue",
+      points: ["Review Issues", "User Reports"],
+    },
+    {
+      title: "System Settings",
+      icon: "⚙️",
+      variant: "purple",
+      points: ["File Limits", "AI Options"],
+    },
+  ];
+
+  return (
+    <div className="admin-feature-page">
+      <style>{`
+        .admin-feature-page {
+          min-height: 100%;
+          padding: 24px;
+          background:
+            radial-gradient(circle at top left, rgba(59, 130, 246, 0.16), transparent 30%),
+            linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
+          color: #172033;
         }
-    };
 
-    useEffect(() => {
-        load();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        .admin-feature-shell {
+          max-width: 1360px;
+          margin: 0 auto;
+        }
 
-    const stats = payload?.stats || {};
-    const charts = payload?.charts || {};
-    const recentUsers = Array.isArray(payload?.recent_users) ? payload.recent_users : [];
-    const recentNotes = Array.isArray(payload?.recent_notes) ? payload.recent_notes : [];
-    const recentFeedback = Array.isArray(payload?.recent_feedback) ? payload.recent_feedback : [];
-    const topWeakTopics = Array.isArray(payload?.top_weak_topics) ? payload.top_weak_topics : [];
+        .admin-feature-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          margin-bottom: 18px;
+        }
 
-    const statCards = useMemo(
-        () => [
-            {
-                icon: <UsersIcon />,
-                iconClass: "stat-icon-blue",
-                value: stats.total_users || 0,
-                label: "Total Users",
-            },
-            {
-                icon: <NotesIcon />,
-                iconClass: "stat-icon-purple",
-                value: stats.total_notes || 0,
-                label: "Total Notes",
-            },
-            {
-                icon: <MessageIcon />,
-                iconClass: "stat-icon-green",
-                value: stats.total_feedback || 0,
-                label: "Feedback",
-            },
-            {
-                icon: <ShieldIcon />,
-                iconClass: "stat-icon-orange",
-                value: stats.total_admins || 0,
-                label: "Total Admins",
-            },
-            {
-                icon: <StarIcon />,
-                iconClass: "stat-icon-green",
-                value: stats.featured_notes || 0,
-                label: "Featured Notes",
-            },
-            {
-                icon: <SparklesIcon />,
-                iconClass: "stat-icon-purple",
-                value: stats.ai_summaries || 0,
-                label: "AI Summaries",
-            },
-            {
-                icon: <BoltIcon />,
-                iconClass: "stat-icon-green",
-                value: stats.active_users || 0,
-                label: "Active Users",
-            },
-        ],
-        [stats]
-    );
+        .admin-feature-title-mini {
+          font-size: 14px;
+          color: #64748b;
+          margin: 0 0 4px;
+        }
 
-    if (loading) return <PageSpinner />;
+        .admin-feature-top h1 {
+          margin: 0;
+          font-size: 28px;
+          font-weight: 800;
+          color: #0f172a;
+        }
 
-    return (
-        <div className="page-enter">
-            <div className="page-header" style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                <div>
-                    <h1 className="page-title">Admin Dashboard</h1>
-                    <p className="page-desc">Overview of your Studyflow system</p>
-                </div>
+        .refresh-btn {
+          border: 0;
+          background: #ffffff;
+          color: #1d4ed8;
+          border-radius: 16px;
+          padding: 13px 18px;
+          font-weight: 800;
+          box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
 
-                <button className="btn btn-secondary" onClick={load} type="button">
-                    Refresh
-                </button>
-            </div>
+        .refresh-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+        }
 
-            {error ? <div className="alert alert-error">{error}</div> : null}
+        .refresh-btn:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
 
-            <div className="stats-grid">
-                {statCards.map((c) => (
-                    <StatCard
-                        key={c.label}
-                        icon={c.icon}
-                        iconClass={c.iconClass}
-                        value={c.value}
-                        label={c.label}
-                    />
-                ))}
-            </div>
+        .admin-hero {
+          position: relative;
+          overflow: hidden;
+          border-radius: 26px;
+          padding: 26px 22px;
+          margin-bottom: 22px;
+          text-align: center;
+          color: white;
+          background: linear-gradient(135deg, #1e63b6 0%, #2f8df0 55%, #43b4ff 100%);
+          box-shadow: 0 18px 35px rgba(37, 99, 235, 0.24);
+        }
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14, marginBottom: 18 }}>
-                <ChartCard title="Users growth" subtitle="New users created per day">
-                    <MiniLineChart
-                        labels={charts.users_growth?.labels || []}
-                        values={charts.users_growth?.values || []}
-                    />
-                </ChartCard>
+        .admin-hero::before,
+        .admin-hero::after {
+          content: "";
+          position: absolute;
+          top: 18px;
+          width: 150px;
+          height: 42px;
+          background: rgba(15, 71, 145, 0.55);
+          transform: skewX(-22deg);
+        }
 
-                <ChartCard title="Notes uploads" subtitle="Notes created per day">
-                    <MiniBarChart
-                        labels={charts.notes_uploads?.labels || []}
-                        values={charts.notes_uploads?.values || []}
-                    />
-                </ChartCard>
+        .admin-hero::before {
+          left: -55px;
+        }
 
-                <ChartCard title="AI usage" subtitle="AI summaries generated per day">
-                    <MiniLineChart
-                        labels={charts.ai_usage?.labels || []}
-                        values={charts.ai_usage?.values || []}
-                    />
-                </ChartCard>
-            </div>
+        .admin-hero::after {
+          right: -55px;
+        }
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
-                <TableCard
-                    title="Recent Users"
-                    columns={["Name", "Email", "Role", "Status", "Created"]}
-                    rows={recentUsers.map((u) => [
-                        u.name,
-                        u.email,
-                        u.is_admin ? (
-                            <span className="badge badge-accent">admin</span>
-                        ) : (
-                            <span className="badge badge-default">user</span>
-                        ),
-                        u.status === "active" ? (
-                            <span className="badge badge-success">active</span>
-                        ) : (
-                            <span className="badge badge-warning">inactive</span>
-                        ),
-                        formatDate(u.created_at),
-                    ])}
-                    emptyText="No users yet."
-                />
+        .admin-hero h2 {
+          position: relative;
+          margin: 0;
+          font-size: clamp(30px, 5vw, 56px);
+          line-height: 1;
+          letter-spacing: 1px;
+          font-weight: 950;
+          text-transform: uppercase;
+          text-shadow: 0 4px 10px rgba(15, 23, 42, 0.25);
+        }
 
-                <TableCard
-                    title="Recent Notes"
-                    columns={["Title", "User", "Source", "Featured", "Created"]}
-                    rows={recentNotes.map((n) => [
-                        n.title,
-                        n.user?.name || "—",
-                        n.source_type || "—",
-                        n.is_featured ? (
-                            <span className="badge badge-accent">featured</span>
-                        ) : (
-                            <span className="badge badge-default">—</span>
-                        ),
-                        formatDate(n.created_at),
-                    ])}
-                    emptyText="No notes yet."
-                />
+        .admin-hero p {
+          position: relative;
+          display: inline-block;
+          margin: 12px 0 0;
+          padding: 8px 28px;
+          border-radius: 0 0 18px 18px;
+          background: rgba(15, 71, 145, 0.55);
+          font-size: 20px;
+          font-weight: 800;
+        }
 
-                <TableCard
-                    title="Recent Feedback"
-                    columns={["Name", "Rating", "Message", "Created"]}
-                    rows={recentFeedback.map((f) => [
-                        f.name,
-                        f.rating ? <span className="badge badge-accent">{f.rating}/5</span> : <span className="badge badge-default">—</span>,
-                        f.message,
-                        formatDate(f.created_at),
-                    ])}
-                    emptyText="No feedback yet."
-                />
+        .admin-alert {
+          margin-bottom: 18px;
+          padding: 14px 16px;
+          border-radius: 18px;
+          background: #fff7ed;
+          color: #9a3412;
+          border: 1px solid #fed7aa;
+          font-weight: 700;
+        }
 
-                <TableCard
-                    title="Top Weak Topics"
-                    columns={["Topic", "Weakness", "Wrong/Total"]}
-                    rows={topWeakTopics.map((t) => [
-                        t.topic,
-                        <span className="badge badge-accent">{Math.round(Number(t.weakness_percent) || 0)}%</span>,
-                        `${t.wrong_count}/${t.total_count}`,
-                    ])}
-                    emptyText="No weak topics yet."
-                />
-            </div>
+        .top-stats-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 16px;
+          margin-bottom: 18px;
+        }
+
+        .small-stat-card {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          background: rgba(255, 255, 255, 0.96);
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          border-radius: 22px;
+          padding: 18px;
+          box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+        }
+
+        .small-stat-card span {
+          display: grid;
+          place-items: center;
+          width: 52px;
+          height: 52px;
+          border-radius: 17px;
+          font-size: 26px;
+        }
+
+        .small-stat-card.blue span {
+          background: #dbeafe;
+        }
+
+        .small-stat-card.purple span {
+          background: #ede9fe;
+        }
+
+        .small-stat-card.green span {
+          background: #dcfce7;
+        }
+
+        .small-stat-card.orange span {
+          background: #ffedd5;
+        }
+
+        .small-stat-card strong {
+          display: block;
+          font-size: 28px;
+          color: #0f172a;
+          line-height: 1;
+        }
+
+        .small-stat-card p {
+          margin: 7px 0 0;
+          color: #64748b;
+          font-size: 13px;
+          font-weight: 800;
+        }
+
+        .admin-feature-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 16px;
+          margin-bottom: 18px;
+        }
+
+        .admin-feature-card {
+          position: relative;
+          overflow: hidden;
+          min-height: 190px;
+          text-align: left;
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          background: rgba(255, 255, 255, 0.94);
+          border-radius: 22px;
+          padding: 20px;
+          cursor: pointer;
+          box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+          transition: 0.2s ease;
+        }
+
+        .admin-feature-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 18px 34px rgba(15, 23, 42, 0.13);
+        }
+
+        .admin-feature-card::after {
+          content: "";
+          position: absolute;
+          right: -28px;
+          bottom: -35px;
+          width: 130px;
+          height: 130px;
+          border-radius: 999px;
+          opacity: 0.16;
+        }
+
+        .admin-feature-card.blue::after {
+          background: #2563eb;
+        }
+
+        .admin-feature-card.green::after {
+          background: #16a34a;
+        }
+
+        .admin-feature-card.purple::after {
+          background: #7c3aed;
+        }
+
+        .admin-feature-card.orange::after {
+          background: #f97316;
+        }
+
+        .admin-feature-card-head {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+
+        .admin-feature-card h3 {
+          margin: 0;
+          color: #164b8f;
+          font-size: 23px;
+          font-weight: 950;
+        }
+
+        .admin-feature-card-head span {
+          display: grid;
+          place-items: center;
+          width: 58px;
+          height: 58px;
+          border-radius: 18px;
+          background: #eff6ff;
+          font-size: 30px;
+        }
+
+        .admin-feature-line {
+          position: relative;
+          z-index: 1;
+          height: 1px;
+          margin: 13px 0;
+          background: linear-gradient(90deg, #bfdbfe, transparent);
+        }
+
+        .admin-feature-card ul {
+          position: relative;
+          z-index: 1;
+          list-style: none;
+          padding: 0;
+          margin: 0;
+          display: grid;
+          gap: 12px;
+        }
+
+        .admin-feature-card li {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          color: #16406f;
+          font-weight: 800;
+          font-size: 15px;
+        }
+
+        .dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 999px;
+          flex: 0 0 auto;
+        }
+
+        .dot-1 {
+          background: #fbbf24;
+        }
+
+        .dot-2 {
+          background: #22c55e;
+        }
+
+        .dot-3 {
+          background: #60a5fa;
+        }
+
+        .analytics-card,
+        .admin-table-card,
+        .system-card,
+        .activity-card {
+          background: rgba(255, 255, 255, 0.96);
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          border-radius: 24px;
+          box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08);
+          overflow: hidden;
+        }
+
+        .analytics-card {
+          margin-bottom: 18px;
+          padding: 22px;
+        }
+
+        .section-heading {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 16px;
+          margin-bottom: 18px;
+          color: #164b8f;
+        }
+
+        .section-heading::before,
+        .section-heading::after {
+          content: "";
+          height: 2px;
+          flex: 1;
+          background: linear-gradient(90deg, transparent, #bfdbfe, transparent);
+        }
+
+        .section-heading h2 {
+          margin: 0;
+          font-size: 28px;
+          font-weight: 950;
+          white-space: nowrap;
+        }
+
+        .metrics-row {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          border: 1px solid #dbeafe;
+          border-radius: 18px;
+          overflow: hidden;
+          margin-bottom: 18px;
+          background: #f8fbff;
+        }
+
+        .admin-metric-box {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          padding: 17px;
+          border-right: 1px solid #dbeafe;
+        }
+
+        .admin-metric-box:last-child {
+          border-right: 0;
+        }
+
+        .metric-icon {
+          display: grid;
+          place-items: center;
+          width: 48px;
+          height: 48px;
+          border-radius: 16px;
+          background: #dbeafe;
+          font-size: 25px;
+        }
+
+        .admin-metric-box strong {
+          display: block;
+          font-size: 26px;
+          color: #0f172a;
+          line-height: 1;
+        }
+
+        .admin-metric-box p {
+          margin: 5px 0 0;
+          color: #475569;
+          font-size: 13px;
+          font-weight: 800;
+        }
+
+        .analytics-content {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 18px;
+        }
+
+        .chart-panel {
+          border: 1px solid #dbeafe;
+          border-radius: 18px;
+          padding: 18px;
+          background: #ffffff;
+        }
+
+        .chart-panel h3 {
+          margin: 0 0 6px;
+          color: #0f172a;
+          font-size: 17px;
+          font-weight: 950;
+        }
+
+        .chart-panel p {
+          margin: 0 0 14px;
+          color: #64748b;
+          font-size: 13px;
+          font-weight: 700;
+        }
+
+        .mini-chart {
+          height: 150px;
+          width: 100%;
+          border-radius: 18px;
+          background:
+            repeating-linear-gradient(
+              to bottom,
+              #ffffff,
+              #ffffff 27px,
+              #eef2ff 28px
+            );
+          padding: 8px;
+        }
+
+        .mini-chart svg {
+          width: 100%;
+          height: 100%;
+        }
+
+        .mini-chart polyline {
+          stroke: #6366f1;
+        }
+
+        .mini-chart circle {
+          fill: #6366f1;
+        }
+
+        .mini-bars {
+          height: 150px;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          gap: 10px;
+          padding: 14px;
+          border-radius: 18px;
+          background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        }
+
+        .mini-bars span {
+          width: 28px;
+          border-radius: 9px 9px 4px 4px;
+          background: linear-gradient(180deg, #818cf8, #6366f1);
+          min-height: 12px;
+        }
+
+        .bottom-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 16px;
+          margin-bottom: 18px;
+        }
+
+        .table-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 16px;
+          margin-bottom: 18px;
+        }
+
+        .admin-table-card {
+          min-width: 0;
+        }
+
+        .admin-table-card h3,
+        .system-card h3,
+        .activity-card h3 {
+          margin: 0;
+          padding: 16px 18px;
+          color: #164b8f;
+          font-size: 22px;
+          font-weight: 950;
+          border-bottom: 1px solid #e2e8f0;
+          background: #f8fbff;
+        }
+
+        .table-scroll {
+          overflow-x: auto;
+        }
+
+        .admin-table {
+          width: 100%;
+          border-collapse: collapse;
+          min-width: 520px;
+        }
+
+        .admin-table th {
+          text-align: left;
+          padding: 12px 14px;
+          background: #f1f5f9;
+          color: #475569;
+          font-size: 12px;
+          text-transform: uppercase;
+        }
+
+        .admin-table td {
+          padding: 13px 14px;
+          border-top: 1px solid #e2e8f0;
+          color: #334155;
+          font-size: 14px;
+          font-weight: 700;
+        }
+
+        .status-pill {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 999px;
+          padding: 5px 10px;
+          background: #dcfce7;
+          color: #15803d;
+          font-size: 12px;
+          font-weight: 950;
+          text-transform: capitalize;
+        }
+
+        .status-pill.generated {
+          background: #dbeafe;
+          color: #1d4ed8;
+        }
+
+        .status-pill.pending {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .status-pill.failed {
+          background: #fee2e2;
+          color: #b91c1c;
+        }
+
+        .role-pill {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 999px;
+          padding: 5px 10px;
+          background: #ede9fe;
+          color: #6d28d9;
+          font-size: 12px;
+          font-weight: 950;
+          text-transform: capitalize;
+        }
+
+        .empty-row {
+          text-align: center;
+          color: #94a3b8 !important;
+          padding: 20px !important;
+        }
+
+        .final-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+        }
+
+        .system-list,
+        .activity-list {
+          padding: 16px 18px 18px;
+          display: grid;
+          gap: 12px;
+        }
+
+        .system-item,
+        .activity-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          padding: 13px 14px;
+          border-radius: 16px;
+          background: #f8fbff;
+          border: 1px solid #e2e8f0;
+        }
+
+        .system-item span,
+        .activity-item span {
+          color: #334155;
+          font-weight: 800;
+          font-size: 14px;
+        }
+
+        .system-item strong,
+        .activity-item strong {
+          color: #0f172a;
+          font-size: 14px;
+        }
+
+        .activity-item {
+          justify-content: flex-start;
+        }
+
+        .activity-icon {
+          display: grid;
+          place-items: center;
+          width: 40px;
+          height: 40px;
+          border-radius: 14px;
+          background: #dbeafe;
+          flex: 0 0 auto;
+        }
+
+        .activity-text {
+          display: grid;
+          gap: 3px;
+        }
+
+        .activity-text p {
+          margin: 0;
+          color: #64748b;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        @media (max-width: 1180px) {
+          .admin-feature-grid,
+          .bottom-grid,
+          .top-stats-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .table-grid,
+          .analytics-content,
+          .final-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .admin-feature-page {
+            padding: 16px;
+          }
+
+          .admin-feature-top {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+
+          .refresh-btn {
+            width: 100%;
+          }
+
+          .admin-feature-grid,
+          .bottom-grid,
+          .metrics-row,
+          .top-stats-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .admin-metric-box {
+            border-right: 0;
+            border-bottom: 1px solid #dbeafe;
+          }
+
+          .admin-metric-box:last-child {
+            border-bottom: 0;
+          }
+
+          .section-heading h2 {
+            font-size: 22px;
+          }
+
+          .admin-hero p {
+            font-size: 16px;
+          }
+        }
+      `}</style>
+
+      <div className="admin-feature-shell">
+        <div className="admin-feature-top">
+          <div>
+            <p className="admin-feature-title-mini">
+              Overview of your Studyflow system
+            </p>
+            <h1>Admin Dashboard</h1>
+          </div>
+
+          <button className="refresh-btn" onClick={loadDashboard} disabled={loading}>
+            {loading ? "Loading..." : "Refresh"}
+          </button>
         </div>
-    );
+
+        <section className="admin-hero">
+          <h2>Admin Dashboard Features</h2>
+          <p>For Study Platform</p>
+        </section>
+
+        {error && <div className="admin-alert">{error}</div>}
+
+        <section className="top-stats-grid">
+          {topStats.map((stat) => (
+            <SmallStatCard key={stat.label} {...stat} />
+          ))}
+        </section>
+
+        <section className="admin-feature-grid">
+          {featureCards.map((card) => (
+            <FeatureCard
+              key={card.title}
+              {...card}
+              onClick={() => navigate(card.path)}
+            />
+          ))}
+        </section>
+
+        <section className="analytics-card">
+          <div className="section-heading">
+            <h2>Analytics Dashboard</h2>
+          </div>
+
+          <div className="metrics-row">
+            {analyticsMetrics.map((metric) => (
+              <MetricBox key={metric.label} {...metric} />
+            ))}
+          </div>
+
+          <div className="analytics-content">
+            <div className="chart-panel">
+              <h3>Users Growth</h3>
+              <p>New users created per day</p>
+              <MiniLineChart values={dashboard.userGrowth} />
+            </div>
+
+            <div className="chart-panel">
+              <h3>Notes Uploads</h3>
+              <p>Notes created per day</p>
+              <MiniBarChart values={dashboard.notesGrowth} />
+            </div>
+
+            <div className="chart-panel">
+              <h3>AI Usage</h3>
+              <p>AI summaries generated per day</p>
+              <MiniLineChart values={dashboard.aiUsage} />
+            </div>
+
+            <div className="chart-panel">
+              <h3>Quiz And Summary Stats</h3>
+              <p>Quizzes and summaries activity</p>
+              <MiniBarChart
+                values={[
+                  dashboard.quizzesCreated,
+                  dashboard.aiSummaries,
+                  dashboard.todayAiUsage,
+                  dashboard.totalNotes,
+                  dashboard.activeUsers,
+                ]}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="bottom-grid">
+          {bottomCards.map((card) => (
+            <FeatureCard key={card.title} {...card} onClick={() => {}} />
+          ))}
+        </section>
+
+        <section className="table-grid">
+          <div className="admin-table-card">
+            <h3>Users Table</h3>
+
+            <div className="table-scroll">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {dashboard.recentUsers.length > 0 ? (
+                    dashboard.recentUsers.slice(0, 5).map((user, index) => (
+                      <tr key={user.id ?? user.email ?? index}>
+                        <td>{user.name ?? user.username ?? "User"}</td>
+                        <td>{user.email ?? "-"}</td>
+                        <td>
+                          <span className="role-pill">
+                            {user.role ?? "user"}
+                          </span>
+                        </td>
+                        <td>
+                          <StatusPill>
+                            {user.status ?? "active"}
+                          </StatusPill>
+                        </td>
+                        <td>{formatDate(user.created_at ?? user.createdAt)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="empty-row" colSpan="5">
+                        No recent users
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="admin-table-card">
+            <h3>Notes Table</h3>
+
+            <div className="table-scroll">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>User</th>
+                    <th>Source</th>
+                    <th>Featured</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {dashboard.recentNotes.length > 0 ? (
+                    dashboard.recentNotes.slice(0, 5).map((note, index) => (
+                      <tr key={note.id ?? note.title ?? index}>
+                        <td>{note.title ?? "Untitled"}</td>
+                        <td>
+                          {note.user?.name ??
+                            note.user_name ??
+                            note.owner ??
+                            "-"}
+                        </td>
+                        <td>{note.source ?? note.type ?? "file"}</td>
+                        <td>
+                          {note.is_featured || note.featured ? (
+                            <StatusPill>Yes</StatusPill>
+                          ) : (
+                            <StatusPill type="pending">No</StatusPill>
+                          )}
+                        </td>
+                        <td>{formatDate(note.created_at ?? note.createdAt)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="empty-row" colSpan="5">
+                        No recent notes
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="admin-table-card">
+            <h3>Quiz Table</h3>
+
+            <div className="table-scroll">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Note</th>
+                    <th>Difficulty</th>
+                    <th>Questions</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {dashboard.recentQuizzes.length > 0 ? (
+                    dashboard.recentQuizzes.slice(0, 5).map((quiz, index) => (
+                      <tr key={quiz.id ?? index}>
+                        <td>{quiz.note?.title ?? quiz.note_title ?? "Quiz"}</td>
+                        <td>{quiz.difficulty ?? "Mixed"}</td>
+                        <td>
+                          {quiz.questions_count ??
+                            quiz.number_of_questions ??
+                            quiz.questions?.length ??
+                            5}
+                        </td>
+                        <td>
+                          <StatusPill type="generated">
+                            {quiz.status ?? "generated"}
+                          </StatusPill>
+                        </td>
+                        <td>{formatDate(quiz.created_at ?? quiz.createdAt)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="empty-row" colSpan="5">
+                        No recent quizzes
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="admin-table-card">
+            <h3>Summary Table</h3>
+
+            <div className="table-scroll">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Note</th>
+                    <th>User</th>
+                    <th>Status</th>
+                    <th>Words</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {dashboard.recentSummaries.length > 0 ? (
+                    dashboard.recentSummaries
+                      .slice(0, 5)
+                      .map((summary, index) => (
+                        <tr key={summary.id ?? index}>
+                          <td>
+                            {summary.note?.title ??
+                              summary.note_title ??
+                              summary.title ??
+                              "Summary"}
+                          </td>
+
+                          <td>
+                            {summary.user?.name ??
+                              summary.user_name ??
+                              summary.owner ??
+                              "-"}
+                          </td>
+
+                          <td>
+                            <StatusPill type="generated">
+                              {summary.status ?? "generated"}
+                            </StatusPill>
+                          </td>
+
+                          <td>
+                            {summary.words_count ??
+                              summary.word_count ??
+                              summary.length ??
+                              "-"}
+                          </td>
+
+                          <td>
+                            {formatDate(summary.created_at ?? summary.createdAt)}
+                          </td>
+                        </tr>
+                      ))
+                  ) : (
+                    <tr>
+                      <td className="empty-row" colSpan="5">
+                        No recent summaries
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section className="final-grid">
+          <div className="system-card">
+            <h3>System Health</h3>
+
+            <div className="system-list">
+              <div className="system-item">
+                <span>Laravel API</span>
+                <StatusPill>Online</StatusPill>
+              </div>
+
+              <div className="system-item">
+                <span>Admin Dashboard API</span>
+                <StatusPill>{error ? "Check" : "Online"}</StatusPill>
+              </div>
+
+              <div className="system-item">
+                <span>Summary Service</span>
+                <StatusPill type="generated">Connected</StatusPill>
+              </div>
+
+              <div className="system-item">
+                <span>Quiz Generator</span>
+                <StatusPill type="generated">Ready</StatusPill>
+              </div>
+
+              <div className="system-item">
+                <span>Current AI Model</span>
+                <strong>Local Ollama</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="activity-card">
+            <h3>Recent Activity</h3>
+
+            <div className="activity-list">
+              {dashboard.recentActivity.length > 0 ? (
+                dashboard.recentActivity.slice(0, 5).map((activity, index) => (
+                  <div className="activity-item" key={activity.id ?? index}>
+                    <span className="activity-icon">
+                      {activity.icon ?? "🔔"}
+                    </span>
+
+                    <div className="activity-text">
+                      <strong>
+                        {activity.title ??
+                          activity.message ??
+                          activity.description ??
+                          "New activity"}
+                      </strong>
+                      <p>{formatDate(activity.created_at ?? activity.createdAt)}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <>
+                  <div className="activity-item">
+                    <span className="activity-icon">👥</span>
+                    <div className="activity-text">
+                      <strong>Users are tracked from the admin dashboard</strong>
+                      <p>Live user management overview</p>
+                    </div>
+                  </div>
+
+                  <div className="activity-item">
+                    <span className="activity-icon">📁</span>
+                    <div className="activity-text">
+                      <strong>Notes uploads appear in the notes table</strong>
+                      <p>View uploaded study materials</p>
+                    </div>
+                  </div>
+
+                  <div className="activity-item">
+                    <span className="activity-icon">🤖</span>
+                    <div className="activity-text">
+                      <strong>AI summaries are monitored here</strong>
+                      <p>Summary table and AI usage charts</p>
+                    </div>
+                  </div>
+
+                  <div className="activity-item">
+                    <span className="activity-icon">📝</span>
+                    <div className="activity-text">
+                      <strong>Generated quizzes are shown in Quiz Table</strong>
+                      <p>Difficulty, questions, and creation date</p>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
 }

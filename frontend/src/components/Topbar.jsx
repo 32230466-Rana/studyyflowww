@@ -23,9 +23,6 @@ function HamburgerIcon() {
 const pageTitles = {
     "/dashboard": "Dashboard",
     "/notes": "My Notes",
-    "/summaries": "My Summaries",
-    "/recommendations": "Recommendations",
-    "/feedback": "Feedback",
     "/admin": "Admin Dashboard",
     "/admin/users": "Admin Users",
     "/admin/notes": "Admin Notes",
@@ -39,8 +36,6 @@ export default function Topbar({ onMenuToggle }) {
         pageTitles[location.pathname] ||
         (location.pathname.startsWith("/notes/")
             ? "Note Details"
-                        : location.pathname.startsWith("/summaries/")
-                            ? "Summary Details"
             : "Studyflow");
 
     const initials = user?.name

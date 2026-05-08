@@ -25,21 +25,14 @@ class AiController extends Controller
             $sessionId = trim((string) ($validated['session_id'] ?? ''));
 
             $payload = [
-                'question' => $validated['question'],
+                'prompt' => $validated['question'],
                 'model' => 'phi3:mini',
+                'documentIds' => !empty($validated['pdf_id']) ? [$validated['pdf_id']] : [],
             ];
-
-            if (!empty($validated['pdf_id'])) {
-                $payload['pdf_ids'] = [$validated['pdf_id']];
-            }
-
-            if ($sessionId !== '') {
-                $payload['session_id'] = $sessionId;
-            }
 
             $fastApiResponse = Http::connectTimeout(10)
                 ->timeout(180)
-                ->post('http://127.0.0.1:8001/api/v1/query', $payload);
+                ->post('http://127.0.0.1:8001/generate', $payload);
 
             if (! $fastApiResponse->successful()) {
                 Log::error('Ask PDF query failed', [
@@ -55,9 +48,9 @@ class AiController extends Controller
 
             return response()->json([
                 'success' => true,
-                'answer' => (string) $fastApiResponse->json('answer', ''),
-                'sources' => $fastApiResponse->json('sources', []),
-                'session_id' => (string) $fastApiResponse->json('session_id', $sessionId),
+                'answer' => (string) $fastApiResponse->json('response', ''),
+                'sources' => $fastApiResponse->json('citations', []),
+                'session_id' => (string) ($sessionId ?: 'default'),
             ]);
         } catch (\Throwable $e) {
             Log::error('Ask PDF error', [

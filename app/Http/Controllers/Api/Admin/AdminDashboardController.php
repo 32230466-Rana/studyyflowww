@@ -3,10 +3,8 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Feedback;
 use App\Models\Note;
 use App\Models\User;
-use App\Models\WeakTopic;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +26,6 @@ class AdminDashboardController extends Controller
             'featured_notes' => Note::where('is_featured', true)->count(),
             'ai_summaries' => Note::whereNotNull('ai_summary')->count(),
             'active_users' => User::where('status', 'active')->count(),
-            'total_feedback' => Feedback::count(),
         ];
 
         $labels = [];
@@ -59,14 +56,14 @@ class AdminDashboardController extends Controller
             ->toArray();
 
         $series = function (array $map) use ($labels): array {
-            return array_map(fn($d) => (int) ($map[$d] ?? 0), $labels);
+            return array_map(fn ($d) => (int) ($map[$d] ?? 0), $labels);
         };
 
         $recentUsers = User::query()
             ->latest('created_at')
             ->limit(8)
             ->get(['id', 'name', 'email', 'is_admin', 'status', 'created_at'])
-            ->map(fn(User $u) => [
+            ->map(fn (User $u) => [
                 'id' => $u->id,
                 'name' => $u->name,
                 'email' => $u->email,
@@ -81,7 +78,7 @@ class AdminDashboardController extends Controller
             ->latest('created_at')
             ->limit(8)
             ->get(['id', 'user_id', 'title', 'source_type', 'is_featured', 'created_at'])
-            ->map(fn(Note $n) => [
+            ->map(fn (Note $n) => [
                 'id' => $n->id,
                 'title' => $n->title,
                 'source_type' => $n->source_type,
@@ -92,34 +89,6 @@ class AdminDashboardController extends Controller
                     'name' => $n->user->name,
                     'email' => $n->user->email,
                 ] : null,
-            ])
-            ->values();
-
-        $recentFeedback = Feedback::query()
-            ->latest('created_at')
-            ->limit(8)
-            ->get(['id', 'name', 'message', 'rating', 'is_visible', 'created_at'])
-            ->map(fn(Feedback $f) => [
-                'id' => $f->id,
-                'name' => $f->name,
-                'message' => $f->message,
-                'rating' => $f->rating,
-                'is_visible' => (bool) $f->is_visible,
-                'created_at' => $f->created_at,
-            ])
-            ->values();
-
-        $topWeakTopics = WeakTopic::query()
-            ->selectRaw('topic, SUM(wrong_count) as wrong, SUM(total_count) as total')
-            ->groupBy('topic')
-            ->orderByRaw('CASE WHEN SUM(total_count) = 0 THEN 0 ELSE (SUM(wrong_count) / SUM(total_count)) END DESC')
-            ->limit(8)
-            ->get()
-            ->map(fn($row) => [
-                'topic' => $row->topic,
-                'wrong_count' => (int) $row->wrong,
-                'total_count' => (int) $row->total,
-                'weakness_percent' => ((int) $row->total) > 0 ? round(((int) $row->wrong / (int) $row->total) * 100, 2) : 0,
             ])
             ->values();
 
@@ -146,8 +115,6 @@ class AdminDashboardController extends Controller
             ],
             'recent_users' => $recentUsers,
             'recent_notes' => $recentNotes,
-            'recent_feedback' => $recentFeedback,
-            'top_weak_topics' => $topWeakTopics,
         ], 'Admin dashboard loaded');
     }
 }

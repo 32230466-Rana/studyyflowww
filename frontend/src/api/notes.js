@@ -22,9 +22,25 @@ export function createNote({ title, description, file, textContent }) {
   });
 }
 
-export function summarizeNote(noteId, mode) {
-  return axiosClient.post('/ai/summarize', {
-    note_id: Number(noteId),
-    mode,
+export async function summarizeNote(noteId, mode) {
+  const noteRes = await axiosClient.get(`/notes/${noteId}`);
+  const text = noteRes.data?.content || noteRes.data?.text || "";
+
+  const response = await fetch("http://127.0.0.1:8002/conversation", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      human_input: text,
+    }),
   });
+
+  const data = await response.json();
+
+  return {
+    data: {
+      summary: data.output,
+    },
+  };
 }
