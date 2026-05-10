@@ -36,7 +36,9 @@ function App() {
 
             <Route
                 path="/"
-                element={<Navigate to={token ? "/dashboard" : "/login"} replace />}
+                element={
+                    <Navigate to={token ? "/dashboard" : "/login"} replace />
+                }
             />
 
             <Route path="/login" element={<LoginPage />} />
@@ -60,7 +62,13 @@ function App() {
             <Route
                 path="*"
                 element={
-                    <div style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>
+                    <div
+                        style={{
+                            padding: 40,
+                            textAlign: "center",
+                            color: "#6b7280",
+                        }}
+                    >
                         Page not found.{" "}
                         <a href="/dashboard" style={{ color: "#6366f1" }}>
                             Go home
@@ -72,5 +80,4 @@ function App() {
     );
 }
 
-
-
+export default App;

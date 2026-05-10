@@ -32,3 +32,13 @@ __pycache__/
 
 # Local AI backend backups
 ai-service/askpdf-backend_MY_BROKEN_BACKUP/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local quiz databases
+*.db
+
+# Local environment files
+.env
