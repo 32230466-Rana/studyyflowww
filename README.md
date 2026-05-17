@@ -19,6 +19,18 @@ The system uses local AI through Ollama, so the main AI features can run locally
 - Get study recommendations based on uploaded notes and learning needs
 - View uploaded notes and reuse extracted text for future AI features
 - Process large documents by splitting them into chunks, summarizing them step by step, and merging the results into a final answer
+## Backend Notes
+Laravel is used as the main backend API.
+Extracted document text is saved in the notes table so it can be reused by summaries, quizzes, Ask PDF, recommendations, and study plans.
+The backend uses PDF parsing to extract text from uploaded study materials.
+Quiz, chat, summary, recommendation, and study plan features reuse the same extracted note content when possible.
+Large files are handled by chunking the text before sending it to the local AI model.
+## Frontend Notes
+React with Vite is used for the frontend.
+The upload form supports study material uploads.
+The note details page allows students to view uploaded content and use AI tools.
+The interface includes loading states, disabled buttons while AI is running, error messages, and scrollable result panels.
+Students can interact with the AI by using built-in buttons or by writing their own prompts.
 
 ## AI and Local Model
 
@@ -29,15 +41,3 @@ Default local model:
 ```env
 OLLAMA_MODEL=llama3.2:3b
 OLLAMA_BASE_URL=http://localhost:11434
-Backend Notes
-Laravel is used as the main backend API.
-Extracted document text is saved in the notes table so it can be reused by summaries, quizzes, Ask PDF, recommendations, and study plans.
-The backend uses PDF parsing to extract text from uploaded study materials.
-Quiz, chat, summary, recommendation, and study plan features reuse the same extracted note content when possible.
-Large files are handled by chunking the text before sending it to the local AI model.
-Frontend Notes
-React with Vite is used for the frontend.
-The upload form supports study material uploads.
-The note details page allows students to view uploaded content and use AI tools.
-The interface includes loading states, disabled buttons while AI is running, error messages, and scrollable result panels.
-Students can interact with the AI by using built-in buttons or by writing their own prompts.
