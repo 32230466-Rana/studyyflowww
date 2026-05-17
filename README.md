@@ -4,8 +4,8 @@ Studyflow is a Laravel API plus React/Vite frontend for uploading study material
 
 ## AI Summary Flow
 
-- Supported uploads: PDF, DOCX, TXT, PPTX
-- Local model: `phi3:mini`
+- Supported uploads: PDF, TXT
+- Local model: `llama3.2:3b`
 - Ollama endpoint: `POST http://localhost:11434/api/generate`
 - Summary formats: bullet points, simple paragraph, detailed explanation
 - Large documents are split into chunks, summarized sequentially, then merged into a final summary
