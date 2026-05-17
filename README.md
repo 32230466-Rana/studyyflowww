@@ -1,4 +1,4 @@
-# StudyFlow
+# StudyFlow Platform
 
 StudyFlow is a Laravel API and React/Vite web platform that helps students upload study materials and use local AI tools to study more effectively. The platform supports document upload, AI summaries, quiz generation, Ask PDF, study plans, and personalized recommendations.
 
