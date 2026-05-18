@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { summarizeText, summarizeFile } from "../services/localAiApi";
+import axiosClient from "../axiosClient";
 
 // ─── Icons ──────────────────────────────────────────────────────────
 function SummaryIcon() {
@@ -140,7 +140,7 @@ export default function AiToolsPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [saveStatus, setSaveStatus] = useState("");
-const [quizType, setQuizType] = useState("mcq");
+    const [quizType, setQuizType] = useState("mcq");
     const handleSummarizeText = async () => {
         try {
             setLoading(true);
@@ -149,9 +149,13 @@ const [quizType, setQuizType] = useState("mcq");
             setGenerationTime(null);
             setSaveStatus("");
 
-            const data = await summarizeText(inputText);
+            const { data } = await axiosClient.post("/summary-service/text", {
+                text: inputText,
+            });
 
-            setSummary(data.summary || "No summary returned.");
+            const summaryText = data.result || data.summary || data.output;
+
+            setSummary(summaryText || "No summary returned.");
 
             setGenerationTime({
                 seconds: data.processing_time_seconds,
@@ -164,7 +168,23 @@ const [quizType, setQuizType] = useState("mcq");
                     : "Generated, but not saved to My Summaries."
             );
         } catch (err) {
-            setError(err.message || "Failed to summarize text.");
+            console.error(err);
+            let errMsg = "Failed to summarize text.";
+
+            if (err.response?.data?.error) {
+                try {
+                    const parsedError = JSON.parse(err.response.data.error);
+                    if (parsedError.detail) errMsg = parsedError.detail;
+                } catch {
+                    errMsg = err.response.data.error;
+                }
+            } else if (err.response?.data?.message) {
+                errMsg = err.response.data.message;
+            } else if (err.message) {
+                errMsg = err.message;
+            }
+
+            setError(errMsg);
         } finally {
             setLoading(false);
         }
@@ -178,9 +198,17 @@ const [quizType, setQuizType] = useState("mcq");
             setGenerationTime(null);
             setSaveStatus("");
 
-            const data = await summarizeFile(selectedFile);
+            const formData = new FormData();
+            formData.append("uploaded_file", selectedFile);
 
-            setSummary(data.summary || "No summary returned.");
+            const { data } = await axiosClient.post(
+                "/summary-service/upload",
+                formData
+            );
+
+            const summaryText = data.result || data.summary || data.output;
+
+            setSummary(summaryText || "No summary returned.");
 
             setGenerationTime({
                 seconds: data.processing_time_seconds,
@@ -193,7 +221,21 @@ const [quizType, setQuizType] = useState("mcq");
                     : "Generated, but not saved to My Summaries."
             );
         } catch (err) {
-            setError(err.message || "Failed to summarize file.");
+            console.error(err);
+            let errMsg = "Failed to summarize file.";
+            if (err.response?.data?.error) {
+                try {
+                    const parsedError = JSON.parse(err.response.data.error);
+                    if (parsedError.detail) errMsg = parsedError.detail;
+                } catch {
+                    errMsg = err.response.data.error;
+                }
+            } else if (err.response?.data?.message) {
+                errMsg = err.response.data.message;
+            } else if (err.message) {
+                errMsg = err.message;
+            }
+            setError(errMsg);
         } finally {
             setLoading(false);
         }
@@ -212,18 +254,18 @@ const [quizType, setQuizType] = useState("mcq");
             onClick: () => navigate("/notes"),
             delay: 0,
         },
-     {
-    icon: <QuizIcon />,
-    title: "Generate Quiz",
-    description:
-        "Generate practice quiz questions from your notes and test your knowledge.",
-    buttonLabel: "Start Quiz",
-    gradient: "linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%)",
-    iconBg: "rgba(34,197,94,0.15)",
-    color: "#22c55e",
-    onClick: () => navigate(`/notes?tool=quiz&type=${quizType}`),
-    delay: 80,
-},
+        {
+            icon: <QuizIcon />,
+            title: "Generate Quiz",
+            description:
+                "Generate practice quiz questions from your notes and test your knowledge.",
+            buttonLabel: "Start Quiz",
+            gradient: "linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%)",
+            iconBg: "rgba(34,197,94,0.15)",
+            color: "#22c55e",
+            onClick: () => navigate(`/notes?tool=quiz&type=${quizType}`),
+            delay: 80,
+        },
         {
             icon: <AskAiIcon />,
             title: "Ask AI",
@@ -264,51 +306,51 @@ const [quizType, setQuizType] = useState("mcq");
                 </p>
             </div>
 
-           <div
-    style={{
-        maxWidth: "360px",
-        margin: "0 auto 24px",
-        padding: "16px",
-        background: "#ffffff",
-        borderRadius: "16px",
-        border: "1px solid #e5e7eb",
-        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)",
-    }}
->
-    <label
-        style={{
-            display: "block",
-            marginBottom: "8px",
-            fontWeight: "700",
-            color: "#334155",
-        }}
-    >
-        Choose Quiz Type
-    </label>
+            <div
+                style={{
+                    maxWidth: "360px",
+                    margin: "0 auto 24px",
+                    padding: "16px",
+                    background: "#ffffff",
+                    borderRadius: "16px",
+                    border: "1px solid #e5e7eb",
+                    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)",
+                }}
+            >
+                <label
+                    style={{
+                        display: "block",
+                        marginBottom: "8px",
+                        fontWeight: "700",
+                        color: "#334155",
+                    }}
+                >
+                    Choose Quiz Type
+                </label>
 
-    <select
-        value={quizType}
-        onChange={(e) => setQuizType(e.target.value)}
-        style={{
-            width: "100%",
-            padding: "12px",
-            borderRadius: "12px",
-            border: "1px solid #d1d5db",
-            fontFamily: "inherit",
-            fontWeight: "600",
-        }}
-    >
-        <option value="mcq">MCQ</option>
-        <option value="true_false">True / False</option>
-        <option value="subjective">Subjective</option>
-    </select>
-</div>
+                <select
+                    value={quizType}
+                    onChange={(e) => setQuizType(e.target.value)}
+                    style={{
+                        width: "100%",
+                        padding: "12px",
+                        borderRadius: "12px",
+                        border: "1px solid #d1d5db",
+                        fontFamily: "inherit",
+                        fontWeight: "600",
+                    }}
+                >
+                    <option value="mcq">MCQ</option>
+                    <option value="true_false">True / False</option>
+                    <option value="subjective">Subjective</option>
+                </select>
+            </div>
 
-<div className="ai-tools-grid">
-    {tools.map((tool) => (
-        <ToolCard key={tool.title} {...tool} />
-    ))}
-</div>
+            <div className="ai-tools-grid">
+                {tools.map((tool) => (
+                    <ToolCard key={tool.title} {...tool} />
+                ))}
+            </div>
             <div
                 style={{
                     marginTop: "32px",
@@ -324,8 +366,8 @@ const [quizType, setQuizType] = useState("mcq");
                 </h2>
 
                 <p style={{ marginBottom: "14px", color: "#64748b" }}>
-                    Test the local Ollama summary connection using pasted text or
-                    a PDF/TXT file.
+                    Test the local Ollama summary connection using pasted text
+                    or a PDF/TXT file.
                 </p>
 
                 <textarea
@@ -387,9 +429,7 @@ const [quizType, setQuizType] = useState("mcq");
                             border: "1px solid #e2e8f0",
                         }}
                     >
-                        <h3 style={{ marginBottom: "10px" }}>
-                            Summary Result
-                        </h3>
+                        <h3 style={{ marginBottom: "10px" }}>Summary Result</h3>
 
                         {generationTime?.seconds && (
                             <p

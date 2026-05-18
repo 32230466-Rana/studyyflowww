@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Admin\AdminUsersController;
 use App\Http\Controllers\Api\Admin\AdminNotesController;
 use App\Http\Controllers\Api\LinkSummaryController;
 use App\Http\Controllers\Api\AiConversationController;
+use App\Http\Controllers\Api\SummaryServiceController;
 
 /*
 |--------------------------------------------------------------------------
@@ -31,6 +32,7 @@ Route::get('/ping', function () {
         'message' => 'API is working',
     ], 200);
 });
+
 /*
 |--------------------------------------------------------------------------
 | Feedback
@@ -178,6 +180,15 @@ Route::middleware('auth:sanctum')->group(function () {
 */
 
 Route::post('/ai/link-summary', [LinkSummaryController::class, 'summarize']);
+
+/*
+|--------------------------------------------------------------------------
+| Summary Service
+|--------------------------------------------------------------------------
+*/
+
+Route::post('/summary-service/upload', [SummaryServiceController::class, 'upload']);
+Route::post('/summary-service/text', [SummaryServiceController::class, 'text']);
 
 /*
 |--------------------------------------------------------------------------

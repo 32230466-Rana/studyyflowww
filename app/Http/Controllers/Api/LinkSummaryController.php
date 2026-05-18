@@ -84,11 +84,18 @@ class LinkSummaryController extends Controller
 
             // Local Ollama model for link summaries
             'OLLAMA_HOST' => env('OLLAMA_HOST', 'http://127.0.0.1:11434'),
-            'OLLAMA_MODEL' => env('LINK_SUMMARY_MODEL', 'qwen2.5:1.5b'),
-            'LINK_SUMMARY_MODEL' => env('LINK_SUMMARY_MODEL', 'qwen2.5:1.5b'),
+            'OLLAMA_MODEL' => env('LINK_SUMMARY_MODEL', env('OLLAMA_MODEL', 'qwen2.5:1.5b')),
+            'LINK_SUMMARY_MODEL' => env('LINK_SUMMARY_MODEL', env('OLLAMA_MODEL', 'qwen2.5:1.5b')),
 
             // Video transcription settings
             'LINK_WHISPER_MODEL' => env('LINK_WHISPER_MODEL', 'tiny'),
+            'LINK_FFMPEG_LOCATION' => env(
+                'LINK_FFMPEG_LOCATION',
+                'C:\\Users\\User\\Desktop\\ffmpeg_extracted\\ffmpeg-8.1-essentials_build\\bin\\ffmpeg.exe'
+            ),
+            'GROQ_API_KEY' => env('GROQ_API_KEY', ''),
+            'GROQ_WHISPER_MODEL' => env('GROQ_WHISPER_MODEL', 'whisper-large-v3-turbo'),
+            'LINK_ALWAYS_TRANSCRIBE_AUDIO' => env('LINK_ALWAYS_TRANSCRIBE_AUDIO') ? 'true' : 'false',
 
             // YouTube fix: tell Python/yt-dlp to use Deno
             'LINK_YTDLP_JS_RUNTIME' => env('LINK_YTDLP_JS_RUNTIME', 'deno'),
@@ -134,6 +141,10 @@ class LinkSummaryController extends Controller
                     'deno_bin_exists' => is_dir($denoBin),
                     'link_ytdlp_js_runtime' => $processEnv['LINK_YTDLP_JS_RUNTIME'],
                     'link_ytdlp_cookies_from_browser' => $processEnv['LINK_YTDLP_COOKIES_FROM_BROWSER'],
+                    'link_ffmpeg_location' => $processEnv['LINK_FFMPEG_LOCATION'],
+                    'groq_key_exists' => !empty($processEnv['GROQ_API_KEY']),
+                    'groq_whisper_model' => $processEnv['GROQ_WHISPER_MODEL'],
+                    'link_always_transcribe_audio' => $processEnv['LINK_ALWAYS_TRANSCRIBE_AUDIO'],
                 ],
             ], 500);
         }
@@ -142,6 +153,7 @@ class LinkSummaryController extends Controller
             'summary' => $data['summary'],
             'title' => $data['title'] ?? null,
             'transcript' => $data['transcript'] ?? null,
+            'transcript_source' => $data['transcript_source'] ?? null,
             'type' => $data['type'] ?? null,
             'url' => $data['url'] ?? $url,
             'processing_time_seconds' => $data['processing_time_seconds'] ?? null,
