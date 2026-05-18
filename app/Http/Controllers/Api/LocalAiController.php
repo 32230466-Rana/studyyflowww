@@ -36,6 +36,9 @@ class LocalAiController extends Controller
 
     public function summarizeText(Request $request): JsonResponse
     {
+        set_time_limit(0);
+        ini_set('max_execution_time', '0');
+
         $validated = $request->validate([
             'text' => ['required', 'string', 'min:5'],
             'title' => ['nullable', 'string', 'max:255'],
@@ -46,8 +49,8 @@ class LocalAiController extends Controller
             $response = Http::timeout(1200)
                 ->connectTimeout(10)
                 ->acceptJson()
-                ->post($this->fastApiUrl . '/conversation', [
-                    'human_input' => $validated['text'],
+                ->post($this->fastApiUrl . '/summarize', [
+                    'text' => $validated['text'],
                 ]);
 
             if (!$response->successful()) {

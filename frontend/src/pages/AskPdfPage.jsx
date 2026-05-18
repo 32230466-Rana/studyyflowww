@@ -69,21 +69,27 @@ export default function AskPdfPage() {
   };
 
   const handleAsk = async () => {
+    if (asking) return;
+
     if (!uploadedPdf) {
       setError("Please upload a PDF first.");
       return;
     }
 
-    if (!question.trim()) return;
+    const currentQuestion = question.trim();
+
+    if (!currentQuestion) {
+      setError("Please write a question first.");
+      return;
+    }
 
     const userMessage = {
       role: "user",
-      content: question,
+      content: currentQuestion,
     };
 
     setMessages((prev) => [...prev, userMessage]);
 
-    const currentQuestion = question;
     setQuestion("");
     setAsking(true);
     setError("");
@@ -173,10 +179,10 @@ export default function AskPdfPage() {
             {messages.length === 0 ? (
               <div className="flex h-full items-center justify-center text-center text-gray-400">
                 <div>
-                  <p className="text-lg font-medium">No messages yet</p>
-                  <p className="mt-2 text-sm">
-                    Upload a PDF to start asking questions.
+                  <p className="text-lg font-medium">
+                    Ask a question about this note/PDF and I’ll answer using its content.
                   </p>
+                  <p className="mt-2 text-sm">Upload a PDF to get started.</p>
                 </div>
               </div>
             ) : (

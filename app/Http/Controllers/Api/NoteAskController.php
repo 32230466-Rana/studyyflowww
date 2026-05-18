@@ -10,7 +10,12 @@ use Illuminate\Support\Facades\Log;
 
 class NoteAskController extends Controller
 {
-    private string $askPdfBaseUrl = 'http://127.0.0.1:8001';
+    private string $askPdfBaseUrl;
+
+    public function __construct()
+    {
+        $this->askPdfBaseUrl = config('services.askpdf.url', env('ASKPDF_URL', 'http://127.0.0.1:8010'));
+    }
 
     public function ask(Request $request, Note $note)
     {

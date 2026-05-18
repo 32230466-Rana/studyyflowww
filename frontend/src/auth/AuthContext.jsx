@@ -55,7 +55,6 @@ export function AuthProvider({ children }) {
 
             const newToken = res.data?.data?.token;
 
-            // Successful login means email is verified.
             setPendingEmailForVerification(null);
 
             setAuthToken(newToken);
@@ -84,7 +83,6 @@ export function AuthProvider({ children }) {
             password_confirmation,
         });
 
-        // Backend sends a verification code; user must verify before login.
         setPendingEmailForVerification(email);
 
         return res;
@@ -96,7 +94,6 @@ export function AuthProvider({ children }) {
             code,
         });
 
-        // Verification complete; clear pending state.
         setPendingEmailForVerification(null);
 
         return res;
@@ -113,12 +110,24 @@ export function AuthProvider({ children }) {
     };
 
     const logout = async () => {
+        const recommendationEmail = JSON.parse(
+            localStorage.getItem("logoutRecommendationEmail") || "{}"
+        );
+
         try {
-            await axiosClient.post("/auth/logout");
-        } catch {
+            await axiosClient.post("/auth/logout", {
+                pdf_title: recommendationEmail.pdf_title || "Your uploaded PDF",
+                focus_source:
+                    recommendationEmail.focus_source ||
+                    "Focus on the slides recommended by StudyFlow.",
+                pdf_path: recommendationEmail.pdf_path || null,
+            });
+        } catch (error) {
+            console.error("Logout API/email error:", error);
         } finally {
             setAuthToken(null);
             setUser(null);
+            localStorage.removeItem("logoutRecommendationEmail");
         }
     };
 

@@ -13,6 +13,16 @@ use App\Support\ApiResponse;
 
 class AiController extends Controller
 {
+    private function aiTutorBaseUrl(): string
+    {
+        return rtrim((string) config('services.ai_tutor.url', env('AI_TUTOR_URL', 'http://127.0.0.1:8010')), '/');
+    }
+
+    private function askPdfBaseUrl(): string
+    {
+        return rtrim((string) config('services.askpdf.url', env('ASKPDF_URL', 'http://127.0.0.1:8010')), '/');
+    }
+
     public function askPdfQuery(Request $request)
     {
         $validated = $request->validate([
@@ -25,17 +35,20 @@ class AiController extends Controller
             $sessionId = trim((string) ($validated['session_id'] ?? ''));
 
             $payload = [
+                'question' => $validated['question'],
                 'prompt' => $validated['question'],
-                'model' => 'phi3:mini',
-                'documentIds' => !empty($validated['pdf_id']) ? [$validated['pdf_id']] : [],
+                'query' => $validated['question'],
+                'message' => $validated['question'],
+                'doc_id' => $validated['pdf_id'] ?? null,
             ];
 
             $fastApiResponse = Http::connectTimeout(10)
-                ->timeout(180)
-                ->post('http://127.0.0.1:8001/generate', $payload);
+                ->timeout(300)
+                ->post($this->askPdfBaseUrl() . '/generate', $payload);
 
             if (! $fastApiResponse->successful()) {
                 Log::error('Ask PDF query failed', [
+                    'url' => $this->askPdfBaseUrl() . '/generate',
                     'status' => $fastApiResponse->status(),
                     'body' => $fastApiResponse->body(),
                 ]);
@@ -46,10 +59,19 @@ class AiController extends Controller
                 ], 502);
             }
 
+            $answer =
+                $fastApiResponse->json('answer')
+                ?? $fastApiResponse->json('reply')
+                ?? $fastApiResponse->json('response')
+                ?? $fastApiResponse->json('output')
+                ?? '';
+
             return response()->json([
                 'success' => true,
-                'answer' => (string) $fastApiResponse->json('response', ''),
+                'answer' => (string) $answer,
+                'reply' => (string) $answer,
                 'sources' => $fastApiResponse->json('citations', []),
+                'chunks' => $fastApiResponse->json('chunks', []),
                 'session_id' => (string) ($sessionId ?: 'default'),
             ]);
         } catch (\Throwable $e) {
@@ -64,26 +86,30 @@ class AiController extends Controller
             ], 500);
         }
     }
+
     public function getChatSessions($id)
     {
         return response()->json([
-            'sessions' => []
+            'sessions' => [],
         ]);
     }
+
     public function createChatSession($id)
     {
         return response()->json([
             'session' => [
-                'id' => 1
-            ]
+                'id' => 1,
+            ],
         ]);
     }
+
     public function deleteChatSession($sessionId)
     {
         return response()->json([
-            'success' => true
+            'success' => true,
         ]);
     }
+
     public function reset()
     {
         return response()->json([
@@ -99,10 +125,9 @@ class AiController extends Controller
             'note_id' => 'nullable|integer',
         ]);
 
-        // Map 'message' to 'question' for askPdfQuery
         $request->merge([
             'question' => $validated['message'],
-            'session_id' => $id
+            'session_id' => $id,
         ]);
 
         return $this->askPdfQuery($request);
@@ -362,10 +387,10 @@ class AiController extends Controller
         }
     }
 
-
     private function isGreeting(string $message): bool
     {
         $greetings = ['hi', 'hello', 'hey', 'help', 'who are you', 'how are you', 'hola', 'helo'];
+
         return in_array($message, $greetings, true);
     }
 
@@ -392,6 +417,7 @@ class AiController extends Controller
 
         return $message;
     }
+
     public function summarize(Request $request)
     {
         $validated = $request->validate([
@@ -412,9 +438,14 @@ class AiController extends Controller
         }
 
         try {
-            $response = Http::timeout(300)->post('http://127.0.0.1:8002/conversation', [
-                'human_input' => $text,
-            ]);
+            $pythonUrl = env('SUMMARY_API_URL', 'http://127.0.0.1:8002/summarize');
+
+            $response = Http::connectTimeout(10)
+                ->timeout(300)
+                ->post($pythonUrl, [
+                    'human_input' => $text,
+                    'text' => $text,
+                ]);
 
             $rawBody = $response->body();
             $data = $response->json();
@@ -435,7 +466,6 @@ class AiController extends Controller
                 ], 500);
             }
 
-            // Original OllamaSummarizer returns "output"
             $summary = $data['output']
                 ?? $data['summary']
                 ?? $data['response']
@@ -479,6 +509,7 @@ class AiController extends Controller
             ], 500);
         }
     }
+
     public function linkSummary(Request $request)
     {
         $validated = $request->validate([
@@ -491,7 +522,7 @@ class AiController extends Controller
             $response = Http::connectTimeout(10)
                 ->timeout(180)
                 ->post($pythonUrl, [
-                    'url' => $validated['url']
+                    'url' => $validated['url'],
                 ]);
 
             if (!$response->successful()) {
@@ -518,7 +549,6 @@ class AiController extends Controller
             ], 500);
         }
     }
-
 
     private function extractRelevantContext(string $query, string $fullText): string
     {
@@ -600,11 +630,11 @@ class AiController extends Controller
             ]);
 
             return ApiResponse::success([
-                'reply' => trim($reply)
+                'reply' => trim($reply),
             ], 'OK');
         } catch (\Throwable $e) {
             return ApiResponse::success([
-                'reply' => "I couldn't find that in the note."
+                'reply' => "I couldn't find that in the note.",
             ], 'OK');
         }
     }
@@ -621,7 +651,7 @@ class AiController extends Controller
 
     private function ollamaModel(): string
     {
-        return (string) config('services.ollama.model', 'phi3:mini');
+        return (string) config('services.ollama.model', 'llama3.2:3b');
     }
 
     private function ollamaTimeout(): int
@@ -725,7 +755,7 @@ class AiController extends Controller
             'give me a summary',
             'summarize the pdf',
             'summarize this file',
-            'summarize this document'
+            'summarize this document',
         ];
 
         foreach ($phrases as $phrase) {
@@ -747,7 +777,7 @@ class AiController extends Controller
                 $response = Http::connectTimeout(10)
                     ->timeout(300)
                     ->post($pythonUrl, [
-                        'human_input' => $note->text_content ?: $note->description ?: ''
+                        'human_input' => $note->text_content ?: $note->description ?: '',
                     ]);
             } else {
                 $disk = Storage::disk('private');
@@ -783,7 +813,7 @@ class AiController extends Controller
             }
 
             return ApiResponse::success([
-                'reply' => "I'm sorry, I couldn't generate a summary for this note right now."
+                'reply' => "I'm sorry, I couldn't generate a summary for this note right now.",
             ], 'OK');
         } catch (\Throwable $e) {
             Log::error('Chat summary error', [
@@ -791,9 +821,83 @@ class AiController extends Controller
             ]);
 
             return ApiResponse::success([
-                'reply' => "I encountered an error while trying to summarize this document."
+                'reply' => "I encountered an error while trying to summarize this document.",
             ], 'OK');
         }
+    }
+
+    private function buildGenerateOnePrompt(string $noteText, string $topic): string
+    {
+        $topicText = $topic !== '' ? $topic : 'the note';
+
+        return <<<PROMPT
+Return ONLY JSON.
+
+{
+  "topic": "{$topicText}",
+  "question": "..."
+}
+
+Create one clear study question from the note.
+Use only the note content.
+Do not include the answer.
+
+NOTE:
+{$noteText}
+PROMPT;
+    }
+
+    private function buildCheckAnswerPrompt(string $question, string $expected, string $user): string
+    {
+        return <<<PROMPT
+Return ONLY JSON.
+
+{
+  "correct": true,
+  "score": 1.0,
+  "feedback": "..."
+}
+
+Evaluate the user's answer.
+Score must be between 0 and 1.
+
+QUESTION:
+{$question}
+
+EXPECTED ANSWER:
+{$expected}
+
+USER ANSWER:
+{$user}
+PROMPT;
+    }
+
+    private function buildQuizPrompt(string $noteText, string $difficulty, int $count, string $topicFallback): string
+    {
+        return <<<PROMPT
+Return ONLY JSON.
+
+{
+  "topic": "{$topicFallback}",
+  "difficulty": "{$difficulty}",
+  "questions": [
+    {
+      "topic": "{$topicFallback}",
+      "question": "...",
+      "options": ["...","...","...","..."],
+      "correct_index": 0
+    }
+  ]
+}
+
+Create exactly {$count} multiple-choice questions.
+Use only the note content.
+Each question must have exactly 4 options.
+correct_index must be 0, 1, 2, or 3.
+
+NOTE:
+{$noteText}
+PROMPT;
     }
 
     private function buildQuizPromptStrict(string $noteText, string $difficulty, int $count, string $topicFallback): string
@@ -864,6 +968,7 @@ PROMPT;
             if ($qTopic === '') {
                 $qTopic = $this->guessTopicFromText($questionText);
             }
+
             if ($qTopic === '') {
                 $qTopic = $topic !== '' ? $topic : 'General';
             }

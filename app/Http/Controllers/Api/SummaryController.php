@@ -46,15 +46,15 @@ class SummaryController extends Controller
             'summary_text',
             'created_at',
             'updated_at',
-        ])->map(function (Summary $s) {
+        ])->map(function (Summary $summary) {
             return [
-                'id' => $s->id,
-                'note_id' => $s->note_id,
-                'title' => $s->title,
-                'source_type' => $s->source_type,
-                'summary_text' => $s->summary_text,
-                'created_at' => optional($s->created_at)->toISOString(),
-                'updated_at' => optional($s->updated_at)->toISOString(),
+                'id' => $summary->id,
+                'note_id' => $summary->note_id,
+                'title' => $summary->title,
+                'source_type' => $summary->source_type,
+                'summary_text' => $summary->summary_text,
+                'created_at' => optional($summary->created_at)->toISOString(),
+                'updated_at' => optional($summary->updated_at)->toISOString(),
             ];
         });
 
@@ -68,7 +68,7 @@ class SummaryController extends Controller
             ->whereKey($id)
             ->first();
 
-        if (! $summary) {
+        if (!$summary) {
             return ApiResponse::error('Summary not found.', 404);
         }
 
@@ -92,7 +92,9 @@ class SummaryController extends Controller
             'summary_text' => ['required', 'string', 'min:1'],
         ]);
 
-        $noteId = array_key_exists('note_id', $validated) ? (int) $validated['note_id'] : null;
+        $noteId = array_key_exists('note_id', $validated)
+            ? (int) $validated['note_id']
+            : null;
 
         if ($noteId) {
             $note = Note::query()
@@ -100,7 +102,7 @@ class SummaryController extends Controller
                 ->whereKey($noteId)
                 ->first();
 
-            if (! $note) {
+            if (!$note) {
                 return ApiResponse::error('Invalid note_id.', 422);
             }
         }
@@ -131,7 +133,7 @@ class SummaryController extends Controller
             ->whereKey($id)
             ->first();
 
-        if (! $summary) {
+        if (!$summary) {
             return ApiResponse::error('Summary not found.', 404);
         }
 

@@ -18,6 +18,12 @@ class FeedbackController extends Controller
 
         $user = $request->user();
 
+        if (!$user) {
+            return response()->json([
+                'message' => 'Unauthenticated. Please login first.',
+            ], 401);
+        }
+
         $feedback = Feedback::create([
             'user_id' => $user->id,
             'name' => $user->name,
@@ -34,7 +40,6 @@ class FeedbackController extends Controller
             'created_at' => $feedback->created_at,
         ], 'Feedback submitted', 201);
     }
-
     public function recent(Request $request)
     {
         $limit = (int) $request->query('limit', 6);

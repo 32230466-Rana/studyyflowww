@@ -4,10 +4,12 @@ import axiosClient from "../api/axiosClient";
 
 const emptyDashboard = {
   totalUsers: 0,
+  aiUsageCount: 0,
   totalNotes: 0,
   totalAdmins: 0,
   featuredNotes: 0,
   aiSummaries: 0,
+  aiUsageCount: 0,
   activeUsers: 0,
   aiRequests: 0,
   quizzesCreated: 0,
@@ -136,6 +138,17 @@ const normalizeDashboard = (payload) => {
       "stats.ai_summaries",
       "stats.summary_count",
     ]),
+
+    aaiUsageCount: pickNumber(root, [
+  "aiUsageCount",
+  "ai_usage_count",
+  "stats.aiUsageCount",
+  "stats.ai_usage_count",
+  "ai_usage_total",
+  "stats.ai_usage_total",
+  "counts.aiUsageCount",
+  "counts.ai_usage_count",
+]),
 
     activeUsers: pickNumber(root, [
       "activeUsers",
@@ -295,13 +308,31 @@ const formatDate = (value) => {
 
   return date.toLocaleDateString();
 };
-
 const FeatureCard = ({ title, icon, points, variant = "blue", onClick }) => {
+  const handlePointClick = (e, point) => {
+    e.stopPropagation();
+
+    if (point && typeof point === "object" && point.action) {
+      point.action();
+      return;
+    }
+
+    if (onClick) {
+      onClick();
+    }
+  };
+
   return (
-    <button
-      type="button"
+    <div
       className={`admin-feature-card ${variant}`}
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && onClick) {
+          onClick();
+        }
+      }}
     >
       <div className="admin-feature-card-head">
         <h3>{title}</h3>
@@ -311,17 +342,26 @@ const FeatureCard = ({ title, icon, points, variant = "blue", onClick }) => {
       <div className="admin-feature-line" />
 
       <ul>
-        {points.map((point, index) => (
-          <li key={point}>
-            <span className={`dot dot-${index + 1}`} />
-            {point}
-          </li>
-        ))}
+        {points.map((point, index) => {
+          const label = typeof point === "string" ? point : point.label;
+
+          return (
+            <li key={label}>
+              <button
+                type="button"
+                className="admin-feature-point-btn"
+                onClick={(e) => handlePointClick(e, point)}
+              >
+                <span className={`dot dot-${index + 1}`} />
+                {label}
+              </button>
+            </li>
+          );
+        })}
       </ul>
-    </button>
+    </div>
   );
 };
-
 const MetricBox = ({ icon, label, value }) => {
   return (
     <div className="admin-metric-box">
@@ -350,7 +390,7 @@ const SmallStatCard = ({ icon, label, value, variant = "blue" }) => {
 
 const MiniLineChart = ({ values = [] }) => {
   const safeValues = values.length > 0 ? values : [0, 0, 0, 0, 0, 0, 0];
-  const max = Math.max(...safeValues, 1);
+  const max = Math.max(...safeValues.map((v) => Number(v || 0)), 1);
   const width = 420;
   const height = 120;
   const gap = safeValues.length > 1 ? width / (safeValues.length - 1) : width;
@@ -358,8 +398,7 @@ const MiniLineChart = ({ values = [] }) => {
   const points = safeValues
     .map((value, index) => {
       const x = index * gap;
-      const y = height - (Number(value || 0) / max) * 90 - 15;
-
+      const y = height - (Number(value || 0) / max) * 75 - 25;
       return `${x},${y}`;
     })
     .join(" ");
@@ -371,9 +410,23 @@ const MiniLineChart = ({ values = [] }) => {
 
         {safeValues.map((value, index) => {
           const x = index * gap;
-          const y = height - (Number(value || 0) / max) * 90 - 15;
+          const y = height - (Number(value || 0) / max) * 75 - 25;
 
-          return <circle key={`${value}-${index}`} cx={x} cy={y} r="5" />;
+          return (
+            <g key={`${value}-${index}`}>
+              <circle cx={x} cy={y} r="5" />
+              <text
+                x={x}
+                y={Math.max(12, y - 10)}
+                textAnchor="middle"
+                fontSize="18"
+                fontWeight="800"
+                fill="#0f172a"
+              >
+                {Number(value || 0)}
+              </text>
+            </g>
+          );
         })}
       </svg>
     </div>
@@ -381,18 +434,38 @@ const MiniLineChart = ({ values = [] }) => {
 };
 
 const MiniBarChart = ({ values = [] }) => {
-  const safeValues = values.length > 0 ? values : [0, 0, 0, 0, 0, 0, 0];
-  const max = Math.max(...safeValues, 1);
+  const safeValues = values.length > 0 ? values : [0, 0, 0, 0, 0];
+  const max = Math.max(...safeValues.map((v) => Number(v || 0)), 1);
 
   return (
     <div className="mini-bars">
       {safeValues.map((value, index) => (
-        <span
+        <div
           key={`${value}-${index}`}
           style={{
-            height: `${Math.max(12, (Number(value || 0) / max) * 100)}%`,
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "flex-end",
+            alignItems: "center",
+            gap: "6px",
           }}
-        />
+        >
+          <strong
+            style={{
+              fontSize: "14px",
+              color: "#0f172a",
+            }}
+          >
+            {Number(value || 0)}
+          </strong>
+
+          <span
+            style={{
+              height: `${Math.max(12, (Number(value || 0) / max) * 100)}%`,
+            }}
+          />
+        </div>
       ))}
     </div>
   );
@@ -459,8 +532,8 @@ export default function AdminDashboardPage() {
       },
       {
         icon: "🤖",
-        label: "AI Summaries",
-        value: dashboard.aiSummaries,
+        label: "AI Usage",
+        value: dashboard.aiUsageCount || dashboard.aiRequests || dashboard.aiSummaries,
         variant: "purple",
       },
       {
@@ -500,7 +573,7 @@ export default function AdminDashboardPage() {
       {
         icon: "🤖",
         label: "AI Requests",
-        value: dashboard.aiRequests || dashboard.aiSummaries,
+        value: dashboard.aiUsageCount || dashboard.aiRequests || dashboard.aiSummaries,
       },
       {
         icon: "📝",
@@ -510,41 +583,104 @@ export default function AdminDashboardPage() {
     ],
     [dashboard]
   );
+  const aiUsageChartValues =
+  Array.isArray(dashboard.aiUsage) &&
+  dashboard.aiUsage.some((v) => Number(v) > 0)
+    ? dashboard.aiUsage
+    : [0, 0, 0, 0, 0, 0, dashboard.aiUsageCount || 0];
 
-  const featureCards = [
-    {
-      title: "User Management",
-      icon: "👤",
-      variant: "blue",
-      path: "/admin/users",
-      points: [
-        "Add / Update / Delete Users",
-        "Role Control Admin / Student",
-        "Search & Filters",
-      ],
-    },
-    {
-      title: "Notes Management",
-      icon: "📚",
-      variant: "green",
-      path: "/admin/notes",
-      points: ["View / Delete Notes", "Reprocess Notes", "File Filters & Status"],
-    },
-    {
-      title: "AI Management",
-      icon: "🤖",
-      variant: "purple",
-      path: "/admin",
-      points: ["Summary Stats", "Quiz Stats", "AI Usage Reports"],
-    },
-    {
-      title: "Quiz Management",
-      icon: "✅",
-      variant: "orange",
-      path: "/admin",
-      points: ["View / Edit Quizzes", "Regenerate Quizzes", "Difficulty Levels"],
-    },
-  ];
+const quizAndSummaryValues = [
+  dashboard.quizzesCreated || 0,
+  dashboard.aiSummaries || 0,
+  dashboard.aiUsageCount || 0,
+  dashboard.totalNotes || 0,
+  dashboard.activeUsers || 0,
+];
+const scrollToSection = (id) => {
+  const element = document.getElementById(id);
+
+  if (element) {
+    element.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+};
+
+const handleFeaturePath = (path) => {
+  if (!path) return;
+
+  if (path.startsWith("#")) {
+    scrollToSection(path.replace("#", ""));
+    return;
+  }
+
+  navigate(path);
+};
+ const featureCards = [
+  {
+    title: "User Management",
+    icon: "👤",
+    variant: "blue",
+    path: "/admin/users",
+    points: [
+      "Add / Update / Delete Users",
+      "Role Control Admin / Student",
+      "Search & Filters",
+    ],
+  },
+  {
+    title: "Notes Management",
+    icon: "📚",
+    variant: "green",
+    path: "/admin/notes",
+    points: [
+      "View / Delete Notes",
+      "Reprocess Notes",
+      "File Filters & Status",
+    ],
+  },
+  {
+    title: "AI Management",
+    icon: "🤖",
+    variant: "purple",
+    path: "#ai-usage-section",
+    points: [
+      {
+        label: "Summary Stats",
+        action: () => scrollToSection("summary-table"),
+      },
+      {
+        label: "Quiz Stats",
+        action: () => scrollToSection("quiz-table"),
+      },
+      {
+        label: "AI Usage Reports",
+        action: () => scrollToSection("ai-usage-section"),
+      },
+    ],
+  },
+  {
+    title: "Quiz Management",
+    icon: "✅",
+    variant: "orange",
+    path: "#quiz-table",
+    points: [
+      {
+        label: "View / Edit Quizzes",
+        action: () => scrollToSection("quiz-table"),
+      },
+      {
+        label: "Regenerate Quizzes",
+        action: () => navigate("/quiz"),
+      },
+      {
+        label: "Difficulty Levels",
+        action: () => scrollToSection("quiz-table"),
+      },
+    ],
+  },
+];
 
   const bottomCards = [
     {
@@ -572,7 +708,24 @@ export default function AdminDashboardPage() {
       points: ["File Limits", "AI Options"],
     },
   ];
+const handleFeatureClick = (path) => {
+  if (!path) return;
 
+  if (path.startsWith("#")) {
+    const element = document.querySelector(path);
+
+    if (element) {
+      element.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+
+    return;
+  }
+
+  navigate(path);
+};
   return (
     <div className="admin-feature-page">
       <style>{`
@@ -586,10 +739,10 @@ export default function AdminDashboardPage() {
         }
 
         .admin-feature-shell {
-          max-width: 1360px;
-          margin: 0 auto;
-        }
-
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
         .admin-feature-top {
           display: flex;
           align-items: center;
@@ -806,32 +959,52 @@ export default function AdminDashboardPage() {
           background: #f97316;
         }
 
-        .admin-feature-card-head {
-          position: relative;
-          z-index: 1;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-        }
+    
 
-        .admin-feature-card h3 {
-          margin: 0;
-          color: #164b8f;
-          font-size: 23px;
-          font-weight: 950;
-        }
+.admin-feature-card h3 {
+  margin: 0;
+  color: #164b8f;
+  font-size: clamp(20px, 1.35vw, 23px);
+  line-height: 1.35;
+  font-weight: 950;
+  flex: 1;
+  min-width: 0;
+}
 
-        .admin-feature-card-head span {
-          display: grid;
-          place-items: center;
-          width: 58px;
-          height: 58px;
-          border-radius: 18px;
-          background: #eff6ff;
-          font-size: 30px;
-        }
+.admin-feature-card-head {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
 
+.admin-feature-card h3 {
+  margin: 0;
+  color: #164b8f;
+  font-size: clamp(20px, 1.35vw, 23px);
+  line-height: 1.35;
+  font-weight: 950;
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-feature-card-head span {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  min-width: 54px;
+  flex: 0 0 54px;
+  border-radius: 18px;
+  background: #eff6ff;
+  font-size: 28px;
+  position: relative;
+  z-index: 3;
+}
+
+        
         .admin-feature-line {
           position: relative;
           z-index: 1;
@@ -858,7 +1031,26 @@ export default function AdminDashboardPage() {
           font-weight: 800;
           font-size: 15px;
         }
+.admin-feature-point-btn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #16406f;
+  font-weight: 800;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
 
+.admin-feature-point-btn:hover {
+  color: #2563eb;
+  transform: translateX(3px);
+}
         .dot {
           width: 10px;
           height: 10px;
@@ -1217,9 +1409,23 @@ export default function AdminDashboardPage() {
         }
 
         @media (max-width: 760px) {
-          .admin-feature-page {
-            padding: 16px;
-          }
+    .admin-feature-page {
+  min-height: calc(100vh - 60px);
+  width: 100%;
+  padding: 24px 32px;
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.16), transparent 30%),
+    linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
+  color: #172033;
+  box-sizing: border-box;
+}
+
+.admin-feature-shell {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+}
 
           .admin-feature-top {
             align-items: flex-start;
@@ -1288,12 +1494,12 @@ export default function AdminDashboardPage() {
             <FeatureCard
               key={card.title}
               {...card}
-              onClick={() => navigate(card.path)}
+            onClick={() => handleFeatureClick(card.path)}
             />
           ))}
         </section>
 
-        <section className="analytics-card">
+        <section id="analytics-section" className="analytics-card">
           <div className="section-heading">
             <h2>Analytics Dashboard</h2>
           </div>
@@ -1319,22 +1525,13 @@ export default function AdminDashboardPage() {
 
             <div className="chart-panel">
               <h3>AI Usage</h3>
-              <p>AI summaries generated per day</p>
-              <MiniLineChart values={dashboard.aiUsage} />
+              <p>AI requests / Ask Note usage</p>
             </div>
-
+<MiniLineChart values={aiUsageChartValues} />
             <div className="chart-panel">
               <h3>Quiz And Summary Stats</h3>
               <p>Quizzes and summaries activity</p>
-              <MiniBarChart
-                values={[
-                  dashboard.quizzesCreated,
-                  dashboard.aiSummaries,
-                  dashboard.todayAiUsage,
-                  dashboard.totalNotes,
-                  dashboard.activeUsers,
-                ]}
-              />
+              <MiniBarChart values={quizAndSummaryValues} />
             </div>
           </div>
         </section>
@@ -1441,55 +1638,67 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          <div className="admin-table-card">
-            <h3>Quiz Table</h3>
+     <div id="quiz-table" className="admin-table-card">
+  <h3>Quiz Table</h3>
 
-            <div className="table-scroll">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Note</th>
-                    <th>Difficulty</th>
-                    <th>Questions</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                  </tr>
-                </thead>
+  <div className="table-scroll">
+    <table className="admin-table">
+      <thead>
+        <tr>
+          <th>Note</th>
+          <th>Difficulty</th>
+          <th>Questions</th>
+          <th>Grade</th>
+          <th>Status</th>
+          <th>Created</th>
+        </tr>
+      </thead>
 
-                <tbody>
-                  {dashboard.recentQuizzes.length > 0 ? (
-                    dashboard.recentQuizzes.slice(0, 5).map((quiz, index) => (
-                      <tr key={quiz.id ?? index}>
-                        <td>{quiz.note?.title ?? quiz.note_title ?? "Quiz"}</td>
-                        <td>{quiz.difficulty ?? "Mixed"}</td>
-                        <td>
-                          {quiz.questions_count ??
-                            quiz.number_of_questions ??
-                            quiz.questions?.length ??
-                            5}
-                        </td>
-                        <td>
-                          <StatusPill type="generated">
-                            {quiz.status ?? "generated"}
-                          </StatusPill>
-                        </td>
-                        <td>{formatDate(quiz.created_at ?? quiz.createdAt)}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td className="empty-row" colSpan="5">
-                        No recent quizzes
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      <tbody>
+        {dashboard.recentQuizzes.length > 0 ? (
+          dashboard.recentQuizzes.slice(0, 5).map((quiz, index) => (
+            <tr key={quiz.id ?? index}>
+              <td>{quiz.note?.title ?? quiz.note_title ?? "Quiz"}</td>
 
-          <div className="admin-table-card">
-            <h3>Summary Table</h3>
+              <td>{quiz.difficulty ?? "Mixed"}</td>
+
+              <td>
+                {quiz.questions_count ??
+                  quiz.number_of_questions ??
+                  quiz.questions?.length ??
+                  5}
+              </td>
+
+              <td>
+                {quiz.grade ??
+                  quiz.score ??
+                  quiz.percentage ??
+                  "-"}
+              </td>
+
+              <td>
+                <StatusPill type="generated">
+                  {quiz.status ?? "generated"}
+                </StatusPill>
+              </td>
+
+              <td>{formatDate(quiz.created_at ?? quiz.createdAt)}</td>
+            </tr>
+          ))
+        ) : (
+          <tr>
+            <td className="empty-row" colSpan="6">
+              No recent quizzes
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+          <div id="summary-table" className="admin-table-card">
+  <h3>Summary Table</h3>
 
             <div className="table-scroll">
               <table className="admin-table">

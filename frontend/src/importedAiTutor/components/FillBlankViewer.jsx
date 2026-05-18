@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { saveRecommendationFromQuiz } from "../../utils/recommendationEngine";
 
 function normalizeAnswer(value) {
   return String(value || "")
@@ -12,17 +14,94 @@ function isAnswerCorrect(userAnswer, question) {
 
   const acceptedAnswers = [
     question.answer,
+    question.correct_answer,
+    question.answer_text,
     ...(question.accepted_answers || []),
-  ].map(normalizeAnswer);
+  ]
+    .filter(Boolean)
+    .map(normalizeAnswer);
 
   return acceptedAnswers.includes(user);
 }
 
-export default function FillBlankViewer({ quiz, onGenerateNew }) {
+function getQuestionText(question) {
+  return (
+    question.question ||
+    question.text ||
+    question.prompt ||
+    question.statement ||
+    "Question"
+  );
+}
+
+function getCorrectAnswer(question) {
+  return (
+    question.answer ||
+    question.correct_answer ||
+    question.answer_text ||
+    question.model_answer ||
+    ""
+  );
+}
+
+function buildQuestionsForRecommendation(questions, answers, meta) {
+  return questions.map((question, index) => {
+    const userAnswer = answers[index] || "";
+    const correct = isAnswerCorrect(userAnswer, question);
+
+    return {
+      ...question,
+      id: question.id || index,
+      question: getQuestionText(question),
+      user_answer: userAnswer,
+      is_correct: correct,
+      correct_answer: getCorrectAnswer(question),
+
+      topic:
+        question.topic ||
+        question.source_topic ||
+        question.section ||
+        question.category ||
+        meta.chapterTitle ||
+        "Current Quiz Topic",
+
+      note_id: question.note_id || question.noteId || meta.noteId || "",
+      note_title: question.note_title || question.noteTitle || meta.noteTitle || "",
+      chapter_id: question.chapter_id || question.chapterId || meta.chapterId || "",
+      chapter_title:
+        question.chapter_title ||
+        question.chapterTitle ||
+        meta.chapterTitle ||
+        "",
+
+      page_start: question.page_start || question.pageStart || question.page || "",
+      page_end: question.page_end || question.pageEnd || question.page || "",
+
+      source_chunk_ids:
+        question.source_chunk_ids ||
+        question.sourceChunkIds ||
+        meta.sourceChunkIds ||
+        [],
+    };
+  });
+}
+
+export default function FillBlankViewer({
+  quiz,
+  onGenerateNew,
+
+  noteId = "",
+  noteTitle = "",
+  chapterId = "",
+  chapterTitle = "",
+  sourceChunkIds = [],
+}) {
+  const navigate = useNavigate();
   const questions = quiz?.questions || [];
 
   const [answers, setAnswers] = useState({});
   const [submitted, setSubmitted] = useState(false);
+  const [recommendationData, setRecommendationData] = useState(null);
 
   const handleAnswerChange = (index, value) => {
     setAnswers((prev) => ({
@@ -31,13 +110,57 @@ export default function FillBlankViewer({ quiz, onGenerateNew }) {
     }));
   };
 
-  const handleSubmit = () => {
-    setSubmitted(true);
-  };
-
   const score = questions.reduce((total, question, index) => {
     return total + (isAnswerCorrect(answers[index], question) ? 1 : 0);
   }, 0);
+
+  const handleSubmit = () => {
+    const meta = {
+      noteId,
+      noteTitle,
+      chapterId,
+      chapterTitle,
+      sourceChunkIds,
+    };
+
+    const recommendationQuestions = buildQuestionsForRecommendation(
+      questions,
+      answers,
+      meta
+    );
+
+    const recommendation = saveRecommendationFromQuiz({
+      questions: recommendationQuestions,
+      userAnswers: answers,
+      quizTitle: noteTitle || quiz?.title || "Fill in the Blank Quiz",
+      chapterTitle: chapterTitle || noteTitle || "Current Chapter",
+      quizType: "fill_blank",
+
+      noteId,
+      noteTitle,
+      chapterId,
+      sourceChunkIds,
+    });
+
+    recommendation.rawScore = score;
+    recommendation.totalQuestions = questions.length;
+
+    localStorage.setItem(
+      "studyflow_recommendation",
+      JSON.stringify(recommendation)
+    );
+
+    setRecommendationData(recommendation);
+    setSubmitted(true);
+  };
+
+  const openRecommendations = () => {
+    navigate("/recommendations", {
+      state: {
+        recommendation: recommendationData,
+      },
+    });
+  };
 
   if (!questions.length) {
     return null;
@@ -77,7 +200,7 @@ export default function FillBlankViewer({ quiz, onGenerateNew }) {
                 <span>Fill in the Blank</span>
               </div>
 
-              <p className="fill-question-text">{question.question}</p>
+              <p className="fill-question-text">{getQuestionText(question)}</p>
 
               <label className="fill-answer-label">
                 Your Answer
@@ -99,7 +222,7 @@ export default function FillBlankViewer({ quiz, onGenerateNew }) {
                   <strong>{correct ? "✅ Correct" : "❌ Wrong"}</strong>
 
                   <p>
-                    <b>Answer:</b> {question.answer}
+                    <b>Answer:</b> {getCorrectAnswer(question)}
                   </p>
 
                   {question.explanation && (
@@ -119,7 +242,17 @@ export default function FillBlankViewer({ quiz, onGenerateNew }) {
           </button>
         ) : (
           <div className="fill-score-box">
-            🎯 Your Score: {score} / {questions.length}
+            <p>
+              🎯 Your Score: {score} / {questions.length}
+            </p>
+
+            <button
+              type="button"
+              className="submit-fill-btn"
+              onClick={openRecommendations}
+            >
+              View Smart Recommendations
+            </button>
           </div>
         )}
       </div>

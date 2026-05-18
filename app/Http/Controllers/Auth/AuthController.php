@@ -12,6 +12,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password;
+use App\Mail\LogoutRecommendationMail;
+use Illuminate\Support\Facades\Log;
+use App\Mail\ReviewReminderMail;
+use App\Models\StudyRecommendation;
+
 
 class AuthController extends Controller
 {
@@ -49,7 +54,37 @@ class AuthController extends Controller
             'email' => $user->email
         ], 'Verification code sent.', 201);
     }
+    public function logout(Request $request)
+    {
+        $user = $request->user();
 
+        if ($user) {
+            $recommendations = StudyRecommendation::where('user_id', $user->id)
+                ->where(function ($query) {
+                    $query->whereNotNull('slide_number')
+                        ->orWhereNotNull('page_number')
+                        ->orWhereNotNull('slide_title')
+                        ->orWhereNotNull('reason');
+                })
+                ->latest()
+                ->take(5)
+                ->get();
+
+            if ($recommendations->isNotEmpty()) {
+                Mail::to($user->email)->send(
+                    new ReviewReminderMail($user, $recommendations)
+                );
+            }
+        }
+
+        if ($user && method_exists($user, 'currentAccessToken') && $user->currentAccessToken()) {
+            $user->currentAccessToken()->delete();
+        }
+
+        return response()->json([
+            'message' => 'Logged out successfully.',
+        ]);
+    }
     public function verify(Request $request)
     {
         return $this->verifyCode($request);

@@ -1,13 +1,29 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { saveRecommendationFromQuiz } from "../../utils/recommendationEngine";
 
-const API_BASE = import.meta.env.VITE_AI_TUTOR_URL || import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001";
+const API_BASE =
+  import.meta.env.VITE_AI_TUTOR_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://127.0.0.1:8001";
+
+function getBookTitle(book) {
+  if (!book) return "Latest Quiz";
+
+  if (typeof book === "string") return book;
+
+  return book.title || book.name || book.book_title || "Latest Quiz";
+}
 
 export default function TrueFalseViewer({ quiz, chapterNumber, book }) {
+  const navigate = useNavigate();
+
   const [visibleQuestions, setVisibleQuestions] = useState([]);
   const [userAnswers, setUserAnswers] = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
+  const [recommendationData, setRecommendationData] = useState(null);
   const [loadingNewQuiz, setLoadingNewQuiz] = useState(false);
   const [error, setError] = useState(null);
   const [generationTime, setGenerationTime] = useState(
@@ -23,17 +39,21 @@ export default function TrueFalseViewer({ quiz, chapterNumber, book }) {
 
   const resetQuiz = (questions) => {
     const selected = questions.slice(0, 5);
+
     setVisibleQuestions(selected);
     setUserAnswers({});
     setSubmitted(false);
     setScore(0);
+    setRecommendationData(null);
     setError(null);
   };
 
   const normalizeAnswer = (value) => {
     if (value === true || value === "true" || value === "True") return "True";
-    if (value === false || value === "false" || value === "False")
+    if (value === false || value === "false" || value === "False") {
       return "False";
+    }
+
     return String(value || "");
   };
 
@@ -44,20 +64,85 @@ export default function TrueFalseViewer({ quiz, chapterNumber, book }) {
     }));
   };
 
+  const checkAnswer = (question, index) => {
+    const userAnswer = userAnswers[index];
+    const correctAnswer = normalizeAnswer(question.answer);
+
+    return userAnswer === correctAnswer;
+  };
+
+  const buildQuestionsForRecommendation = () => {
+    return visibleQuestions.map((question, index) => {
+      const correctAnswer = normalizeAnswer(question.answer);
+      const isCorrect = checkAnswer(question, index);
+
+      return {
+        ...question,
+        id: question.id || index,
+        question: question.question || question.statement || "",
+        type: "true_false",
+        user_answer: userAnswers[index] || "",
+        answer: correctAnswer,
+        correct_answer: correctAnswer,
+        is_correct: isCorrect,
+        topic:
+          question.topic ||
+          question.chapter_title ||
+          question.category ||
+          (chapterNumber !== null && chapterNumber !== undefined
+            ? `Chapter ${chapterNumber}`
+            : "Current Quiz Topic"),
+      };
+    });
+  };
+
+  const createRecommendation = (calculatedScore) => {
+    const recommendation = saveRecommendationFromQuiz({
+      questions: buildQuestionsForRecommendation(),
+      userAnswers,
+      quizTitle: getBookTitle(book),
+      chapterTitle:
+        chapterNumber !== null && chapterNumber !== undefined
+          ? `Chapter ${chapterNumber}`
+          : "Current Quiz Topic",
+      quizType: "true_false",
+    });
+
+    recommendation.rawScore = calculatedScore;
+    recommendation.totalQuestions = visibleQuestions.length;
+
+    localStorage.setItem(
+      "studyflow_recommendation",
+      JSON.stringify(recommendation)
+    );
+
+    setRecommendationData(recommendation);
+
+    return recommendation;
+  };
+
   const handleSubmit = () => {
     let calculatedScore = 0;
 
-    visibleQuestions.forEach((q, idx) => {
-      const userAnswer = userAnswers[idx];
-      const correctAnswer = normalizeAnswer(q.answer);
-
-      if (userAnswer === correctAnswer) {
+    visibleQuestions.forEach((question, index) => {
+      if (checkAnswer(question, index)) {
         calculatedScore += 1;
       }
     });
 
     setScore(calculatedScore);
     setSubmitted(true);
+    createRecommendation(calculatedScore);
+  };
+
+  const openRecommendations = () => {
+    const recommendation = recommendationData || createRecommendation(score);
+
+    navigate("/recommendations", {
+      state: {
+        recommendation,
+      },
+    });
   };
 
   const regenerateTrueFalseQuiz = async () => {
@@ -68,9 +153,11 @@ export default function TrueFalseViewer({ quiz, chapterNumber, book }) {
     try {
       setLoadingNewQuiz(true);
 
+      const bookParam = getBookTitle(book);
+
       const res = await axios.post(
         `${API_BASE}/api/quiz/true-false/chapter?book=${encodeURIComponent(
-          book
+          bookParam
         )}&chapter_number=${chapterNumber}`
       );
 
@@ -81,6 +168,7 @@ export default function TrueFalseViewer({ quiz, chapterNumber, book }) {
         err.response?.data?.detail ||
         err.response?.data?.error ||
         "Failed to regenerate True/False quiz.";
+
       setError(detail);
     } finally {
       setLoadingNewQuiz(false);
@@ -92,6 +180,7 @@ export default function TrueFalseViewer({ quiz, chapterNumber, book }) {
       <div className="flex justify-between items-center mb-4">
         <div>
           <h2 className="text-xl font-bold">✅ True/False Quiz</h2>
+
           <p className="text-sm text-gray-500">
             3 False + 2 True • Local Ollama polishing with backend answer safety
             {generationTime && ` • Generation Time: ${generationTime}s`}
@@ -156,6 +245,7 @@ export default function TrueFalseViewer({ quiz, chapterNumber, book }) {
                       onChange={() => handleSelect(idx, option)}
                       className="mr-2"
                     />
+
                     {option}
                   </label>
                 ))}
@@ -200,8 +290,18 @@ export default function TrueFalseViewer({ quiz, chapterNumber, book }) {
           Submit
         </button>
       ) : (
-        <div className="mt-6 text-lg font-bold text-purple-700">
-          🎯 Your Score: {score} / {visibleQuestions.length}
+        <div className="mt-6 rounded-xl bg-indigo-50 px-5 py-4 text-center">
+          <p className="text-lg font-bold text-purple-700">
+            🎯 Your Score: {score} / {visibleQuestions.length}
+          </p>
+
+          <button
+            type="button"
+            onClick={openRecommendations}
+            className="mt-4 rounded-lg bg-blue-600 px-6 py-3 font-bold text-white transition hover:bg-blue-700"
+          >
+            View Smart Recommendations
+          </button>
         </div>
       )}
     </div>

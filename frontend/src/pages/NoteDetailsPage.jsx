@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+
 import axiosClient from "../api/axiosClient";
 import ChatMessage, { TypingIndicator } from "../components/ChatMessage.jsx";
 import { PageSpinner } from "../components/Spinner.jsx";
-import { summarizeText, summarizeFile } from "../services/localAiApi";
+
+import {
+    getAiConversations,
+    createAiConversation,
+    getAiConversationMessages,
+    saveAiConversationMessage,
+    deleteAiConversation,
+} from "../services/aiConversationService";
+
 function AiThinking({ label = "AI is thinking" }) {
     return (
         <span className="ai-thinking">
@@ -44,23 +53,50 @@ export default function NoteDetailsPage() {
     const chatEndRef = useRef(null);
 
     const hasTextContent = Boolean(note?.text_content?.trim());
-const [quizType, setQuizType] = useState("mcq");
-const [questionsCount, setQuestionsCount] = useState(5);
-const [difficulty, setDifficulty] = useState("Mixed");
-const [quiz, setQuiz] = useState(null);
-const [loadingQuiz, setLoadingQuiz] = useState(false);
-const [quizError, setQuizError] = useState(null);
-const hasRealFile =
-    note?.has_file === true ||
-    note?.has_file === 1 ||
-    note?.has_file === "1";
 
-const isPdfNote =
-    note?.source_type === "pdf" ||
-    note?.mime_type === "application/pdf" ||
-    hasRealFile;
+    const hasRealFile =
+        note?.has_file === true ||
+        note?.has_file === 1 ||
+        note?.has_file === "1";
 
-const canGenerateSummary = hasTextContent || isPdfNote;
+    const isPdfNote =
+        note?.source_type === "pdf" ||
+        note?.mime_type === "application/pdf" ||
+        hasRealFile;
+
+    const canGenerateSummary = hasTextContent || isPdfNote;
+
+    const notifyDashboardUpdate = (key) => {
+        const current = Number(localStorage.getItem(key) || 0);
+        const nextValue = current + 1;
+
+        localStorage.setItem(key, String(nextValue));
+
+        window.dispatchEvent(
+            new CustomEvent("studyflow-dashboard-updated", {
+                detail: {
+                    key,
+                    value: nextValue,
+                },
+            })
+        );
+    };
+
+    const normalizeConversation = (conversation) => ({
+        ...conversation,
+        id: conversation.uuid,
+        title: conversation.title || "New chat",
+    });
+
+    const normalizeMessageForDisplay = (message) => ({
+        id: message.id || null,
+        role: message.role === "assistant" ? "ai" : message.role,
+        originalRole: message.role,
+        content: message.content,
+        metadata: message.metadata || {},
+        created_at: message.created_at || null,
+    });
+
     useEffect(() => {
         let mounted = true;
 
@@ -135,72 +171,99 @@ const canGenerateSummary = hasTextContent || isPdfNote;
         }
     };
 
-   const generateSummary = async () => {
-    try {
-        setAiError("");
-        setSummary("");
-        setSummaryTime(null);
-        setSummaryLoading(true);
+    const generateSummary = async () => {
+        try {
+            setAiError("");
+            setSummary("");
+            setSummaryTime(null);
+            setSummaryLoading(true);
 
-        if (!hasTextContent && !isPdfNote) {
-            setAiError("No text or PDF found for this note.");
-            return;
+            if (!hasTextContent && !isPdfNote) {
+                setAiError("No text or PDF found for this note.");
+                return;
+            }
+
+            let res;
+
+            if (hasTextContent) {
+                res = await axiosClient.post("/local-ai/summary/text", {
+                    text: note.text_content,
+                    note_id: note.id,
+                    title: `Summary of ${
+                        note?.title || note?.original_filename || "this note"
+                    }`,
+                });
+            } else {
+                res = await axiosClient.post("/ai/summarize", {
+                    note_id: note.id,
+                });
+            }
+
+            const summaryText =
+                res.data?.summary ||
+                res.data?.output ||
+                res.data?.answer ||
+                res.data?.data?.summary ||
+                res.data?.data?.output ||
+                "";
+
+            if (!summaryText) {
+                setAiError("Summary service returned empty response.");
+                return;
+            }
+
+            setSummary(summaryText);
+
+            setSummaryFilename(
+                note?.original_filename || note?.title || "this note"
+            );
+
+            try {
+                await axiosClient.post("/summaries", {
+                    note_id: note.id,
+                    title: `Summary of ${
+                        note?.title || note?.original_filename || "this note"
+                    }`,
+                    source_type: isPdfNote ? "pdf" : "text",
+                    summary_text: summaryText,
+                });
+
+                notifyDashboardUpdate("studyflow_ai_summaries_count");
+
+                console.log("SUMMARY SAVED TO MY SUMMARIES");
+            } catch (saveErr) {
+                console.error(
+                    "SAVE SUMMARY ERROR:",
+                    saveErr?.response?.data || saveErr.message
+                );
+
+                setAiError(
+                    saveErr?.response?.data?.message ||
+                        "Summary generated, but failed to save in My Summaries."
+                );
+            }
+
+            const seconds =
+                res.data?.processing_time_seconds ||
+                res.data?.data?.processing_time_seconds ||
+                null;
+
+            if (seconds) {
+                setSummaryTime(seconds);
+            }
+        } catch (err) {
+            console.error("SUMMARY ERROR:", err?.response?.data || err.message);
+
+            const errorMessage =
+                err?.response?.data?.message ||
+                err?.response?.data?.error ||
+                "Summary service failed.";
+
+            setAiError(errorMessage);
+        } finally {
+            setSummaryLoading(false);
         }
-
-        let res;
-
-        if (hasTextContent) {
-            res = await axiosClient.post("/local-ai/summary/text", {
-                text: note.text_content,
-                note_id: note.id,
-                title: `Summary of ${note?.title || note?.original_filename || "this note"}`,
-            });
-        } else {
-            res = await axiosClient.post("/ai/summarize", {
-                note_id: note.id,
-            });
-        }
-
-        const summaryText =
-            res.data?.summary ||
-            res.data?.output ||
-            res.data?.answer ||
-            res.data?.data?.summary ||
-            res.data?.data?.output ||
-            "";
-
-        if (!summaryText) {
-            setAiError("Summary service returned empty response.");
-            return;
-        }
-
-        setSummary(summaryText);
-
-        setSummaryFilename(
-            note?.original_filename || note?.title || "this note"
-        );
-
-        const seconds =
-            res.data?.processing_time_seconds ||
-            res.data?.data?.processing_time_seconds ||
-            null;
-
-        if (seconds) {
-            setSummaryTime(seconds);
-        }
-    } catch (err) {
-        console.error("SUMMARY ERROR:", err?.response?.data || err.message);
-
-        const errorMessage =
-            err?.response?.data?.message ||
-            err?.response?.data?.error ||
-            "Summary service failed.";
-
-        setAiError(errorMessage);
-    } finally {
-        setSummaryLoading(false);
-    }
-};
+    };
 
     const downloadSummary = () => {
         if (!summary) return;
@@ -244,32 +307,23 @@ const canGenerateSummary = hasTextContent || isPdfNote;
         URL.revokeObjectURL(url);
     };
 
-   const handleOpenQuizPage = () => {
-    navigate(
-        `/quiz/${id}?type=${quizType}&difficulty=${difficulty}&count=${questionsCount}`
-    );
-};
+    const handleOpenQuizPage = () => {
+        notifyDashboardUpdate("studyflow_ai_usage_count");
+        navigate(`/quiz/${id}?type=mcq&difficulty=Mixed&count=5`);
+    };
 
-    const openChat = async (sessionId) => {
+    const openChat = async (conversationUuid) => {
         try {
-            setActiveChatId(sessionId);
+            setActiveChatId(conversationUuid);
             setChatMessages([]);
             setAiError("");
 
-            const res = await axiosClient.get(
-                `/chat-sessions/${sessionId}/messages`
-            );
+            const res = await getAiConversationMessages(conversationUuid);
+            const messages = res.messages?.data || [];
 
-            const messages = res.data?.messages || [];
-
-            setChatMessages(
-                messages.map((m) => ({
-                    role: m.role,
-                    content: m.content,
-                }))
-            );
+            setChatMessages(messages.map(normalizeMessageForDisplay));
         } catch (err) {
-            console.error("Failed to open chat:", err);
+            console.error("Failed to open saved chat:", err);
             setAiError("Failed to open chat.");
         }
     };
@@ -279,8 +333,9 @@ const canGenerateSummary = hasTextContent || isPdfNote;
             setChatSessionsLoading(true);
             setAiError("");
 
-            const res = await axiosClient.get(`/notes/${id}/chat-sessions`);
-            const sessions = res.data?.sessions || [];
+            const res = await getAiConversations(Number(id));
+            const conversations = res.conversations?.data || [];
+            const sessions = conversations.map(normalizeConversation);
 
             setChatSessions(sessions);
 
@@ -291,50 +346,82 @@ const canGenerateSummary = hasTextContent || isPdfNote;
                 setChatMessages([]);
             }
         } catch (err) {
-            console.error("Failed to load chat sessions:", err);
+            console.error("Failed to load saved chats:", err);
             setAiError("Failed to load chats.");
         } finally {
             setChatSessionsLoading(false);
         }
     };
 
-    const createNewChat = async ({ clearMessages = true } = {}) => {
+    const createNewChat = async ({
+        clearMessages = true,
+        title = "New chat",
+    } = {}) => {
         try {
             setAiError("");
 
-            const res = await axiosClient.post(`/notes/${id}/chat-sessions`, {
-                title: "New Chat",
+            const res = await createAiConversation({
+                title,
+                note_id: Number(id),
             });
 
-            const session = res.data?.session;
+            const conversation = res.conversation;
 
-            if (!session) return null;
+            if (!conversation) return null;
+
+            const session = normalizeConversation(conversation);
 
             setChatSessions((prev) => [session, ...prev]);
             setActiveChatId(session.id);
 
+            const welcomeText = "Hi! What can I help you with about this note?";
+
+            const savedWelcome = await saveAiConversationMessage(session.id, {
+                role: "assistant",
+                content: welcomeText,
+                metadata: {
+                    source: "welcome",
+                    note_id: Number(id),
+                },
+            });
+
             if (clearMessages) {
-                setChatMessages([]);
+                if (savedWelcome?.chat_message) {
+                    setChatMessages([
+                        normalizeMessageForDisplay(savedWelcome.chat_message),
+                    ]);
+                } else {
+                    setChatMessages([
+                        {
+                            role: "ai",
+                            content: welcomeText,
+                            metadata: {},
+                        },
+                    ]);
+                }
             }
 
             return session;
         } catch (err) {
-            console.error("Failed to create chat:", err);
+            console.error("Failed to create saved chat:", err);
             setAiError("Failed to create new chat.");
             return null;
         }
     };
 
-    const deleteChat = async (sessionId) => {
+    const deleteChat = async (conversationUuid) => {
         if (!window.confirm("Delete this chat?")) return;
 
         try {
-            await axiosClient.delete(`/chat-sessions/${sessionId}`);
+            await deleteAiConversation(conversationUuid);
 
-            const remaining = chatSessions.filter((s) => s.id !== sessionId);
+            const remaining = chatSessions.filter(
+                (session) => session.id !== conversationUuid
+            );
+
             setChatSessions(remaining);
 
-            if (activeChatId === sessionId) {
+            if (activeChatId === conversationUuid) {
                 if (remaining.length > 0) {
                     await openChat(remaining[0].id);
                 } else {
@@ -343,7 +430,7 @@ const canGenerateSummary = hasTextContent || isPdfNote;
                 }
             }
         } catch (err) {
-            console.error("Failed to delete chat:", err);
+            console.error("Failed to delete saved chat:", err);
             setAiError("Failed to delete chat.");
         }
     };
@@ -352,6 +439,36 @@ const canGenerateSummary = hasTextContent || isPdfNote;
         loadChatSessions();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
+
+    const handleEditChatMessage = async (messageId, newContent) => {
+        setChatMessages((prev) =>
+            prev.map((message) =>
+                message.id === messageId
+                    ? { ...message, content: newContent }
+                    : message
+            )
+        );
+
+        // Backend saving for edit will be added next.
+    };
+
+    const handleMessageReaction = async (messageId, reaction) => {
+        setChatMessages((prev) =>
+            prev.map((message) =>
+                message.id === messageId
+                    ? {
+                          ...message,
+                          metadata: {
+                              ...(message.metadata || {}),
+                              reaction,
+                          },
+                      }
+                    : message
+            )
+        );
+
+        // Backend saving for like/dislike will be added next.
+    };
 
     const sendChat = async () => {
         const message = chatInput.trim();
@@ -362,67 +479,75 @@ const canGenerateSummary = hasTextContent || isPdfNote;
         setChatInput("");
         setAiError("");
 
-        setChatMessages((prev) => [
-            ...prev,
-            { role: "user", content: message },
-        ]);
-
         try {
-            let sessionId = activeChatId;
+            let conversationUuid = activeChatId;
 
-            if (!sessionId) {
+            if (!conversationUuid) {
                 const newSession = await createNewChat({
                     clearMessages: false,
+                    title: message.slice(0, 70) || "New chat",
                 });
 
                 if (!newSession) {
-                    throw new Error("Could not create chat session.");
+                    throw new Error("Could not create saved chat.");
                 }
 
-                sessionId = newSession.id;
+                conversationUuid = newSession.id;
             }
 
-           let res;
+            const savedUserResponse = await saveAiConversationMessage(
+                conversationUuid,
+                {
+                    role: "user",
+                    content: message,
+                    metadata: {
+                        source: "note-chat",
+                        note_id: Number(id),
+                    },
+                }
+            );
 
-res = await axiosClient.post(
-    `/auth/notes/${note.id}/ask-text`,
-    {
-        question: message,
-        session_id: sessionId,
-    }
-);
+            if (savedUserResponse?.chat_message) {
+                setChatMessages((prev) => [
+                    ...prev,
+                    normalizeMessageForDisplay(savedUserResponse.chat_message),
+                ]);
+            }
+
+            const res = await axiosClient.post(`/notes/${note.id}/ask-text`, {
+                question: message,
+                message: message,
+                conversation_uuid: conversationUuid,
+            });
+
             const reply =
                 res.data?.answer ||
                 res.data?.reply ||
                 res.data?.message ||
                 "No answer returned.";
 
-            setChatMessages((prev) => [
-                ...prev,
-                { role: "ai", content: reply },
-            ]);
+            const savedAssistantResponse = await saveAiConversationMessage(
+                conversationUuid,
+                {
+                    role: "assistant",
+                    content: reply,
+                    metadata: {
+                        source: "ask-text",
+                        note_id: Number(id),
+                    },
+                }
+            );
 
-            if (res.data?.session) {
-                setChatSessions((prev) => {
-                    const exists = prev.some(
-                        (s) => s.id === res.data.session.id
-                    );
-
-                    const updated = exists
-                        ? prev.map((s) =>
-                              s.id === res.data.session.id
-                                  ? res.data.session
-                                  : s
-                          )
-                        : [res.data.session, ...prev];
-
-                    return updated.sort(
-                        (a, b) =>
-                            new Date(b.updated_at).getTime() -
-                            new Date(a.updated_at).getTime()
-                    );
-                });
+            if (savedAssistantResponse?.chat_message) {
+                setChatMessages((prev) => [
+                    ...prev,
+                    normalizeMessageForDisplay(
+                        savedAssistantResponse.chat_message
+                    ),
+                ]);
             }
+
+            await loadChatSessions();
         } catch (err) {
             console.error("CHAT ERROR:", err?.response?.data || err.message);
 
@@ -489,91 +614,30 @@ res = await axiosClient.post(
             <div className="section-card">
                 <h2>AI Tools</h2>
 
-             <div
-    className="ai-action-btns"
-    style={{ display: "flex", gap: 12, flexWrap: "wrap" }}
->
-    <button
-        className="btn btn-primary"
-        onClick={generateSummary}
-        disabled={summaryLoading || !canGenerateSummary}
-    >
-        {summaryLoading ? (
-            <AiThinking label="Summarizing" />
-        ) : (
-            "Generate Summary"
-        )}
-    </button>
+                <div
+                    className="ai-action-btns"
+                    style={{ display: "flex", gap: 12, flexWrap: "wrap" }}
+                >
+                    <button
+                        className="btn btn-primary"
+                        onClick={generateSummary}
+                        disabled={summaryLoading || !canGenerateSummary}
+                    >
+                        {summaryLoading ? (
+                            <AiThinking label="Summarizing" />
+                        ) : (
+                            "Generate Summary"
+                        )}
+                    </button>
 
-    {/* حطي menu هون */}
-    <div
-        style={{
-            display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
-            alignItems: "center",
-            width: "100%",
-            marginTop: 8,
-        }}
-    >
-        <div>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
-                Quiz Type
-            </label>
+                    <button
+                        className="btn btn-primary"
+                        onClick={handleOpenQuizPage}
+                    >
+                        Generate Quiz
+                    </button>
+                </div>
 
-            <select
-                value={quizType}
-                onChange={(e) => setQuizType(e.target.value)}
-                className="input"
-                style={{ minWidth: 150 }}
-            >
-                <option value="mcq">MCQ</option>
-                <option value="true_false">True / False</option>
-                <option value="subjective">Subjective</option>
-            </select>
-        </div>
-
-        <div>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
-                Difficulty
-            </label>
-
-            <select
-                value={difficulty}
-                onChange={(e) => setDifficulty(e.target.value)}
-                className="input"
-                style={{ minWidth: 130 }}
-            >
-                <option value="Mixed">Mixed</option>
-                <option value="Hard">Hard</option>
-                <option value="Medium">Medium</option>
-            </select>
-        </div>
-
-        <div>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
-                Questions
-            </label>
-
-            <input
-                type="number"
-                min="1"
-                max="10"
-                value={questionsCount}
-                onChange={(e) => setQuestionsCount(e.target.value)}
-                className="input"
-                style={{ width: 100 }}
-            />
-        </div>
-    </div>
-
-    <button
-        className="btn btn-primary"
-        onClick={handleOpenQuizPage}
-    >
-        Generate Quiz
-    </button>
-</div>
                 {!canGenerateSummary && (
                     <div
                         style={{
@@ -771,7 +835,7 @@ res = await axiosClient.post(
                                     }}
                                     title={session.title}
                                 >
-                                    {session.title || "New Chat"}
+                                    {session.title || "New chat"}
                                 </button>
 
                                 <button
@@ -806,11 +870,15 @@ res = await axiosClient.post(
                                 </div>
                             )}
 
-                            {chatMessages.map((m, i) => (
+                            {chatMessages.map((message, index) => (
                                 <ChatMessage
-                                    key={i}
-                                    role={m.role}
-                                    content={m.content}
+                                    key={message.id || index}
+                                    id={message.id}
+                                    role={message.role}
+                                    content={message.content}
+                                    metadata={message.metadata}
+                                    onEdit={handleEditChatMessage}
+                                    onReaction={handleMessageReaction}
                                 />
                             ))}
 
@@ -823,9 +891,7 @@ res = await axiosClient.post(
                             <input
                                 className="input"
                                 value={chatInput}
-                                onChange={(e) =>
-                                    setChatInput(e.target.value)
-                                }
+                                onChange={(e) => setChatInput(e.target.value)}
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter") {
                                         sendChat();

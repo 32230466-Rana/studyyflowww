@@ -62,25 +62,6 @@ function FilesIcon() {
     );
 }
 
-function PlusIcon() {
-    return (
-        <svg
-            width="15"
-            height="15"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2.5"
-        >
-            <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 4v16m8-8H4"
-            />
-        </svg>
-    );
-}
-
 function ArrowRightIcon() {
     return (
         <svg
@@ -100,98 +81,6 @@ function ArrowRightIcon() {
     );
 }
 
-// ------------------------------------------------------------------
-
-// Animated counter
-function useCountUp(target, duration = 900) {
-    const [value, setValue] = useState(0);
-    const raf = useRef(null);
-
-    useEffect(() => {
-        cancelAnimationFrame(raf.current);
-
-        const start = performance.now();
-        const startValue = 0;
-
-        const tick = (now) => {
-            const progress = Math.min((now - start) / duration, 1);
-            const eased = 1 - Math.pow(1 - progress, 3);
-
-            setValue(Math.round(startValue + eased * (target - startValue)));
-
-            if (progress < 1) {
-                raf.current = requestAnimationFrame(tick);
-            }
-        };
-
-        raf.current = requestAnimationFrame(tick);
-
-        return () => cancelAnimationFrame(raf.current);
-    }, [target, duration]);
-
-    return value;
-}
-
-function StatCard({ icon, iconClass, value, label }) {
-    const animated = useCountUp(value);
-
-    return (
-        <div className="stat-card">
-            <div className={`stat-icon ${iconClass}`}>{icon}</div>
-            <div className="stat-value">{animated}</div>
-            <div className="stat-label">{label}</div>
-        </div>
-    );
-}
-
-function formatPercent(n) {
-    const num = Number(n);
-    if (Number.isNaN(num)) return "0%";
-    return `${Math.round(num)}%`;
-}
-
-function truncate(text, max = 88) {
-    const t = String(text || "").trim();
-    if (!t) return "";
-    if (t.length <= max) return t;
-    return `${t.slice(0, max - 1)}…`;
-}
-
-function RecentNoteRow({ note }) {
-    const label = note.mime_type?.includes("pdf")
-        ? "PDF"
-        : note.source_type === "text"
-        ? "Text"
-        : note.source_type?.includes("txt")
-        ? "TXT"
-        : "Note";
-
-    return (
-        <div className="recent-note">
-            <div className="recent-note-left">
-                <NotesIcon />
-            </div>
-
-            <div className="recent-note-content">
-                <div className="recent-note-title">{note.title}</div>
-
-                <div className="recent-note-meta">
-                    <span className="badge badge-default">{label}</span>
-
-                    {note.ai_summary && (
-                        <span className="badge badge-accent">AI</span>
-                    )}
-                </div>
-            </div>
-
-            <Link to={`/notes/${note.id}`} className="btn btn-sm btn-ghost">
-                View <ArrowRightIcon />
-            </Link>
-        </div>
-    );
-}
-
-// ─── Cloud Upload Icon ─────────────────────────────────────────────
 function CloudUploadIcon() {
     return (
         <svg
@@ -269,16 +158,83 @@ function SummaryActivityIcon() {
     );
 }
 
-// ─── Main component ────────────────────────────────────────────────
+// ---- Helpers -------------------------------------------------------
+function useCountUp(target, duration = 900) {
+    const [value, setValue] = useState(0);
+    const raf = useRef(null);
+
+    useEffect(() => {
+        cancelAnimationFrame(raf.current);
+
+        const start = performance.now();
+        const startValue = 0;
+
+        const tick = (now) => {
+            const progress = Math.min((now - start) / duration, 1);
+            const eased = 1 - Math.pow(1 - progress, 3);
+
+            setValue(Math.round(startValue + eased * (target - startValue)));
+
+            if (progress < 1) {
+                raf.current = requestAnimationFrame(tick);
+            }
+        };
+
+        raf.current = requestAnimationFrame(tick);
+
+        return () => cancelAnimationFrame(raf.current);
+    }, [target, duration]);
+
+    return value;
+}
+
+function StatCard({ icon, iconClass, value, label }) {
+    const animated = useCountUp(Number(value) || 0);
+
+    return (
+        <div className="stat-card">
+            <div className={`stat-icon ${iconClass}`}>{icon}</div>
+            <div className="stat-value">{animated}</div>
+            <div className="stat-label">{label}</div>
+        </div>
+    );
+}
+
+function formatPercent(n) {
+    const num = Number(n);
+    if (Number.isNaN(num)) return "0%";
+    return `${Math.round(num)}%`;
+}
+
+function truncate(text, max = 88) {
+    const t = String(text || "").trim();
+    if (!t) return "";
+    if (t.length <= max) return t;
+    return `${t.slice(0, max - 1)}…`;
+}
+
+function extractArrayFromApi(response) {
+    const payload = response?.data;
+
+    const data =
+        payload?.data?.data ??
+        payload?.data ??
+        payload?.items ??
+        payload ??
+        [];
+
+    return Array.isArray(data) ? data : [];
+}
+
+// ---- Main component ------------------------------------------------
 export default function DashboardPage() {
     const { user } = useAuth();
 
-    // ── Notes list state ──
     const [notes, setNotes] = useState([]);
+    const [summaries, setSummaries] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
-    // ── Upload form state ──
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [file, setFile] = useState(null);
@@ -289,23 +245,47 @@ export default function DashboardPage() {
     const [uploadSuccess, setUploadSuccess] = useState(false);
     const [uploadError, setUploadError] = useState("");
 
-    // ── Recommendations ──
     const [weakTopics, setWeakTopics] = useState([]);
+    const [dashboardStats, setDashboardStats] = useState({
+        ai_usage_count: 0,
+    });
 
     const fileInputRef = useRef(null);
 
-    // ── Load notes ──
     const load = useCallback(async () => {
         setLoading(true);
         setError("");
+
         try {
-            const res = await axiosClient.get("/notes");
-            setNotes(res.data?.data || []);
-        } catch (err) {
-            if (err?.response?.status !== 401) {
-                setError(
-                    err?.response?.data?.message || "Failed to load notes."
+            const [notesResult, summariesResult] = await Promise.allSettled([
+                axiosClient.get("/notes"),
+                axiosClient.get("/summaries"),
+            ]);
+
+            if (notesResult.status === "fulfilled") {
+                setNotes(extractArrayFromApi(notesResult.value));
+            } else {
+                const err = notesResult.reason;
+
+                if (err?.response?.status !== 401) {
+                    setError(
+                        err?.response?.data?.message || "Failed to load notes."
+                    );
+                }
+
+                setNotes([]);
+            }
+
+            if (summariesResult.status === "fulfilled") {
+                setSummaries(extractArrayFromApi(summariesResult.value));
+            } else {
+                console.log(
+                    "Summaries load error:",
+                    summariesResult.reason?.response?.data ||
+                        summariesResult.reason?.message
                 );
+
+                setSummaries([]);
             }
         } finally {
             setLoading(false);
@@ -317,7 +297,32 @@ export default function DashboardPage() {
             const rec = await axiosClient.get("/recommendations");
             setWeakTopics(rec.data?.data || []);
         } catch {
-            // silent: dashboard should still load even if these fail
+            // silent: dashboard should still load even if recommendations fail
+        }
+    }, []);
+
+    const loadDashboardStats = useCallback(async () => {
+        try {
+            const res = await axiosClient.get("/dashboard");
+
+            const payload = res.data?.data || res.data || {};
+            const stats = payload.stats || payload;
+
+            const usageValue =
+                stats.ai_usage_count ??
+                stats.aiUsageCount ??
+                stats.ai_requests ??
+                stats.aiRequests ??
+                (typeof stats.ai_usage === "number" ? stats.ai_usage : 0);
+
+            setDashboardStats({
+                ai_usage_count: Number(usageValue || 0),
+            });
+        } catch (err) {
+            console.log("Dashboard stats error:", err.response?.data || err.message);
+            setDashboardStats({
+                ai_usage_count: 0,
+            });
         }
     }, []);
 
@@ -329,28 +334,39 @@ export default function DashboardPage() {
         loadInsights();
     }, [loadInsights]);
 
-    // ── Drag & drop handlers ──
+    useEffect(() => {
+        loadDashboardStats();
+    }, [loadDashboardStats]);
+
     const handleDragOver = (e) => {
         e.preventDefault();
         setIsDragging(true);
     };
 
-    const handleDragLeave = () => setIsDragging(false);
+    const handleDragLeave = () => {
+        setIsDragging(false);
+    };
 
     const handleDrop = (e) => {
         e.preventDefault();
         setIsDragging(false);
+
         const droppedFile = e.dataTransfer.files[0];
-        if (droppedFile) setFile(droppedFile);
+        if (droppedFile) {
+            setFile(droppedFile);
+        }
     };
 
-    const handleDropZoneClick = () => fileInputRef.current?.click();
+    const handleDropZoneClick = () => {
+        fileInputRef.current?.click();
+    };
 
     const handleFileInput = (e) => {
-        if (e.target.files[0]) setFile(e.target.files[0]);
+        if (e.target.files[0]) {
+            setFile(e.target.files[0]);
+        }
     };
 
-    // ── Upload handler ──
     const handleUpload = async (e) => {
         e.preventDefault();
 
@@ -391,11 +407,6 @@ export default function DashboardPage() {
                 formData.append("question", trimmedQuestion);
             }
 
-            console.log("FORM DATA:");
-            for (const pair of formData.entries()) {
-                console.log(pair[0], pair[1]);
-            }
-
             await axiosClient.post("/notes", formData);
 
             setUploadSuccess(true);
@@ -404,7 +415,9 @@ export default function DashboardPage() {
             setFile(null);
             setTextContent("");
             setAiQuestion("");
-            load();
+
+            await load();
+            await loadDashboardStats();
 
             setTimeout(() => setUploadSuccess(false), 3000);
         } catch (err) {
@@ -429,17 +442,21 @@ export default function DashboardPage() {
     };
 
     const totalNotes = notes.length;
-    const aiSummaries = notes.filter((n) => n.ai_summary).length;
-    const filesUploaded = notes.filter((n) => n.has_file).length;
-    const aiUsage = aiSummaries;
-    const recentAiActivity = notes
-        .filter((n) => n.ai_summary)
+    const aiSummaries = summaries.length;
+    const filesUploaded = notes.filter((n) => n.has_file || n.file_path || n.pdf_path).length;
+    const aiUsage = dashboardStats.ai_usage_count || 0;
+
+    const recentAiActivity = summaries
         .slice(0, 5)
-        .map((n) => ({
-            id: n.id,
+        .map((summary) => ({
+            id: summary.id,
             action: "Generated summary",
-            title: n.title,
-            date: n.updated_at || n.created_at,
+            title:
+                summary.title ||
+                summary.note?.title ||
+                summary.note_title ||
+                "Summary",
+            date: summary.updated_at || summary.created_at,
         }));
 
     const firstName = user?.name?.split(" ")[0] || "there";
@@ -467,18 +484,21 @@ export default function DashboardPage() {
                     value={totalNotes}
                     label="Total Notes"
                 />
+
                 <StatCard
                     icon={<SparklesIcon />}
                     iconClass="stat-icon-blue"
                     value={aiSummaries}
                     label="AI Summaries"
                 />
+
                 <StatCard
                     icon={<FilesIcon />}
                     iconClass="stat-icon-green"
                     value={filesUploaded}
                     label="Files Uploaded"
                 />
+
                 <StatCard
                     icon={<BrainIcon />}
                     iconClass="stat-icon-orange"
@@ -516,6 +536,7 @@ export default function DashboardPage() {
                             >
                                 🧠
                             </div>
+
                             <div>
                                 <h3
                                     style={{
@@ -527,6 +548,7 @@ export default function DashboardPage() {
                                 >
                                     Test Your Knowledge
                                 </h3>
+
                                 <p
                                     style={{
                                         margin: "0",
@@ -538,6 +560,7 @@ export default function DashboardPage() {
                                 </p>
                             </div>
                         </div>
+
                         <p
                             style={{
                                 margin: "0 0 20px 0",
@@ -549,6 +572,7 @@ export default function DashboardPage() {
                             difficulty levels and track your progress with our
                             engaging quiz platform.
                         </p>
+
                         <Link
                             to="/quiz"
                             style={{
@@ -566,14 +590,14 @@ export default function DashboardPage() {
                                 fontSize: "14px",
                             }}
                             onMouseEnter={(e) => {
-                                e.target.style.background =
+                                e.currentTarget.style.background =
                                     "rgba(255,255,255,0.3)";
-                                e.target.style.transform = "translateY(-1px)";
+                                e.currentTarget.style.transform = "translateY(-1px)";
                             }}
                             onMouseLeave={(e) => {
-                                e.target.style.background =
+                                e.currentTarget.style.background =
                                     "rgba(255,255,255,0.2)";
-                                e.target.style.transform = "translateY(0)";
+                                e.currentTarget.style.transform = "translateY(0)";
                             }}
                         >
                             <span style={{ marginRight: "8px" }}>🚀</span>
@@ -592,7 +616,7 @@ export default function DashboardPage() {
                             borderRadius: "50%",
                             zIndex: 1,
                         }}
-                    ></div>
+                    />
 
                     <div
                         style={{
@@ -605,7 +629,7 @@ export default function DashboardPage() {
                             borderRadius: "50%",
                             zIndex: 1,
                         }}
-                    ></div>
+                    />
                 </div>
             </div>
 
@@ -618,6 +642,7 @@ export default function DashboardPage() {
                             <label className="upload-label">
                                 Title <span className="required">*</span>
                             </label>
+
                             <input
                                 className="upload-input"
                                 placeholder="e.g. Chapter 3 — Thermodynamics"
@@ -631,6 +656,7 @@ export default function DashboardPage() {
                                 Description{" "}
                                 <span className="optional">(optional)</span>
                             </label>
+
                             <input
                                 className="upload-input"
                                 placeholder="Brief description…"
@@ -665,9 +691,11 @@ export default function DashboardPage() {
                         {file ? (
                             <div className="drop-zone-file">
                                 <FilesIcon />
+
                                 <span className="drop-zone-filename">
                                     {file.name}
                                 </span>
+
                                 <button
                                     type="button"
                                     className="drop-zone-remove"
@@ -682,12 +710,15 @@ export default function DashboardPage() {
                         ) : (
                             <>
                                 <CloudUploadIcon />
+
                                 <p className="drop-zone-title">
                                     Upload your study material
                                 </p>
+
                                 <p className="drop-zone-sub">
                                     Drag &amp; drop files here or browse
                                 </p>
+
                                 <span className="drop-zone-btn">
                                     Browse files
                                 </span>
@@ -712,6 +743,7 @@ export default function DashboardPage() {
                             Ask a question about your notes{" "}
                             <span className="optional">(optional)</span>
                         </label>
+
                         <input
                             className="upload-input"
                             placeholder="Example: What are the key concepts in this lecture?"
@@ -740,6 +772,7 @@ export default function DashboardPage() {
                         ) : (
                             <SparklesIcon />
                         )}
+
                         {uploading ? "Uploading…" : "Upload Note"}
                     </button>
                 </form>
@@ -751,6 +784,7 @@ export default function DashboardPage() {
                         <div className="section-card-title">
                             Recent AI Activity
                         </div>
+
                         <Link to="/ai-tools" className="btn btn-sm btn-ghost">
                             AI Tools <ArrowRightIcon />
                         </Link>
@@ -766,6 +800,7 @@ export default function DashboardPage() {
                                 <div className="ai-activity-icon">
                                     <SummaryActivityIcon />
                                 </div>
+
                                 <div className="ai-activity-body">
                                     <span className="ai-activity-action">
                                         {item.action}
@@ -774,6 +809,7 @@ export default function DashboardPage() {
                                         for &ldquo;{item.title}&rdquo;
                                     </span>
                                 </div>
+
                                 <div className="ai-activity-time">
                                     {item.date
                                         ? new Date(item.date).toLocaleDateString(
@@ -794,6 +830,7 @@ export default function DashboardPage() {
             <div className="section-card">
                 <div className="section-card-header">
                     <div className="section-card-title">Weak Topics</div>
+
                     <Link to="/recommendations" className="btn btn-sm btn-ghost">
                         View all <ArrowRightIcon />
                     </Link>
@@ -801,54 +838,40 @@ export default function DashboardPage() {
 
                 {weakTopics.length === 0 ? (
                     <div className="empty-state">
-                        <p>No weak topics yet. Take a quiz to generate recommendations.</p>
-                    </div>
-                ) : (
-                    weakTopics
-                        .slice(0, 4)
-                        .map((t) => (
-                            <div key={t.id} className="recent-note">
-                                <div className="recent-note-left">🎯</div>
-                                <div className="recent-note-content">
-                                    <div className="recent-note-title">{t.topic}</div>
-                                    <div className="recent-note-meta">
-                                        <span className="badge badge-accent">
-                                            {formatPercent(t.weakness_percent)}
-                                        </span>
-                                        <span className="badge badge-default">
-                                            {t.wrong_count}/{t.total_count}
-                                        </span>
-                                        <span className="badge badge-default">
-                                            {truncate(t.recommendation || "You need more revision in this topic.")}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        ))
-                )}
-            </div>
-
-            <div className="section-card">
-                <div className="section-card-header">
-                    <div className="section-card-title">Recent Notes</div>
-                    <Link to="/notes" className="btn btn-sm btn-ghost">
-                        View all <ArrowRightIcon />
-                    </Link>
-                </div>
-
-                {notes.length === 0 ? (
-                    <div className="empty-state">
                         <p>
-                            No notes yet. Upload your first study material
-                            above.
+                            No weak topics yet. Take a quiz to generate
+                            recommendations.
                         </p>
                     </div>
                 ) : (
-                    notes
-                        .slice(0, 8)
-                        .map((note) => (
-                            <RecentNoteRow key={note.id} note={note} />
-                        ))
+                    weakTopics.slice(0, 4).map((t) => (
+                        <div key={t.id} className="recent-note">
+                            <div className="recent-note-left">🎯</div>
+
+                            <div className="recent-note-content">
+                                <div className="recent-note-title">
+                                    {t.topic}
+                                </div>
+
+                                <div className="recent-note-meta">
+                                    <span className="badge badge-accent">
+                                        {formatPercent(t.weakness_percent)}
+                                    </span>
+
+                                    <span className="badge badge-default">
+                                        {t.wrong_count}/{t.total_count}
+                                    </span>
+
+                                    <span className="badge badge-default">
+                                        {truncate(
+                                            t.recommendation ||
+                                                "You need more revision in this topic."
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    ))
                 )}
             </div>
         </div>

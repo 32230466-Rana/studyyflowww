@@ -115,10 +115,12 @@ export default function AdminSidebar({ open, onClose }) {
     const navigate = useNavigate();
 
     const handleLogout = async () => {
+    try {
         await logout();
+    } finally {
         navigate("/login", { replace: true });
-    };
-
+    }
+};
     const initials = user?.name
         ? user.name
               .split(" ")
