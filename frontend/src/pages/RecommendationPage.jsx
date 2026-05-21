@@ -422,67 +422,31 @@ export default function RecommendationPage() {
 
   const weakTopics = data?.weakTopics || [];
   const selectedWeakTopic = weakTopics[selectedIndex] || weakTopics[0] || {};
+  const saveRecommendationsForEmail = async (items) => {
+  try {
+    const token =
+      localStorage.getItem("token") ||
+      localStorage.getItem("auth_token") ||
+      localStorage.getItem("access_token");
 
-  const saveRecommendationsForEmail = async (items = []) => {
-    try {
-      if (!data || !Array.isArray(items) || items.length === 0) return;
-
-      const cleaned = items
-        .map((item) => {
-          const focus = buildFocus(data, item);
-          const slides = getItemSlides(item);
-          const firstSlide = slides.length > 0 ? slides[0] : null;
-
-          return {
-            note_id: focus.noteId || null,
-
-            pdf_title:
-              focus.noteTitle ||
-              data.noteTitle ||
-              data.quizTitle ||
-              data.title ||
-              data.pdfTitle ||
-              data.pdf_title ||
-              "Your uploaded PDF",
-
-            slide_number: firstSlide,
-            page_number: firstSlide,
-
-            slide_title:
-              item.topic || data.recommendedFocus || "Recommended weak point",
-
-            reason:
-              item.reason ||
-              `${getSourceText(
-                data,
-                item
-              )}. You answered this part incorrectly, so StudyFlow recommends reviewing it.`,
-
-            action_url: focus.noteId
-              ? `${window.location.origin}/notes/${focus.noteId}`
-              : `${window.location.origin}`,
-          };
-        })
-        .filter((item) => {
-          return (
-            item.slide_number ||
-            item.page_number ||
-            item.slide_title ||
-            item.reason
-          );
-        });
-
-      if (cleaned.length === 0) return;
-
-      console.log("Saving recommendations for email:", cleaned);
-
-      await axiosClient.post("/study-recommendations", {
-        recommendations: cleaned,
-      });
-    } catch (error) {
-      console.error("Failed to save recommendations for email:", error);
+    if (!token) {
+      console.warn("Skip saving recommendations for email: user is not authenticated.");
+      return;
     }
-  };
+
+    await axiosClient.post("/recommendations/email/save", {
+      recommendations: items,
+    });
+  } catch (error) {
+    if (error?.response?.status === 401) {
+      console.warn("Skip saving recommendations for email: unauthenticated.");
+      return;
+    }
+
+    console.error("Failed to save recommendations for email:", error);
+  }
+};
+
 
   useEffect(() => {
     if (data && selectedWeakTopic && Object.keys(selectedWeakTopic).length > 0) {

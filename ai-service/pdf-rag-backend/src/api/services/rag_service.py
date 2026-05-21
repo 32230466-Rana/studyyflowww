@@ -1,4 +1,4 @@
-"""RAG query service - optimized for large PDFs."""
+"""RAG query service - optimized for accurate PDF MCQs."""
 from typing import List, Dict, Tuple, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -16,8 +16,6 @@ from ..config import settings
 
 
 class RAGService:
-    """Service for fast RAG operations."""
-
     def __init__(self):
         self.persist_directory = settings.VECTOR_DB_DIR
 
@@ -39,16 +37,11 @@ class RAGService:
         if not pdfs:
             return "No PDFs found to query.", [], []
 
-        reasoning_steps.append(
-            f"📚 Searching across {len(pdfs)} PDF(s): {', '.join([p.name for p in pdfs])}"
-        )
+        llm = ChatOllama(model=model, temperature=0.1)
+        validator_llm = ChatOllama(model="phi3:mini", temperature=0)
 
-        llm = ChatOllama(
-            model=model,
-            temperature=0.1,
-        )
-
-        reasoning_steps.append(f"🤖 Using model: {model}")
+        reasoning_steps.append(f"🤖 Generator: {model}")
+        reasoning_steps.append("🛡️ Validator: phi3:mini")
 
         embeddings = OllamaEmbeddings(model="nomic-embed-text")
 
@@ -63,21 +56,11 @@ class RAGService:
                     collection_name=pdf.collection_name,
                 )
 
-                reasoning_steps.append(f"📄 Fast retrieving from: {pdf.name}")
-
-                docs = vector_db.similarity_search(
-                    question,
-                    k=5,
-                )
-
-                clean_docs = []
+                docs = vector_db.similarity_search(question, k=3)
 
                 for doc in docs:
-                    if "pdf_name" not in doc.metadata:
-                        doc.metadata["pdf_name"] = pdf.name
-
-                    if "pdf_id" not in doc.metadata:
-                        doc.metadata["pdf_id"] = pdf.pdf_id
+                    doc.metadata.setdefault("pdf_name", pdf.name)
+                    doc.metadata.setdefault("pdf_id", pdf.pdf_id)
 
                     chunk_key = (
                         doc.metadata.get("pdf_id"),
@@ -85,32 +68,18 @@ class RAGService:
                         doc.page_content[:120],
                     )
 
-                    if chunk_key in seen_chunks:
-                        continue
-
-                    seen_chunks.add(chunk_key)
-                    clean_docs.append(doc)
-
-                all_docs.extend(clean_docs)
-                reasoning_steps.append(
-                    f"✅ Found {len(clean_docs)} relevant chunks in {pdf.name}"
-                )
+                    if chunk_key not in seen_chunks:
+                        seen_chunks.add(chunk_key)
+                        all_docs.append(doc)
 
             except Exception as e:
                 reasoning_steps.append(f"⚠️ Error retrieving from {pdf.name}: {str(e)}")
-                print(f"Error retrieving from {pdf.name}: {e}")
 
         if not all_docs:
-            return (
-                "I could not retrieve relevant PDF chunks. Try uploading the PDF again.",
-                [],
-                reasoning_steps,
-            )
+            return "I could not retrieve relevant PDF chunks.", [], reasoning_steps
 
-        reasoning_steps.append(f"📊 Total chunks retrieved: {len(all_docs)}")
-
-        MAX_CONTEXT_CHARS = 6500
-        MAX_DOCS_FOR_CONTEXT = 6
+        MAX_CONTEXT_CHARS = 2500
+        MAX_DOCS_FOR_CONTEXT = 3
 
         context_parts = []
         used_chars = 0
@@ -123,21 +92,15 @@ class RAGService:
                 continue
 
             remaining = MAX_CONTEXT_CHARS - used_chars
-
             if remaining <= 0:
                 break
 
             text = text[:remaining]
             used_chars += len(text)
 
-            context_parts.append(f"[Source: {source}]\n{text}\n")
+            context_parts.append(f"[Source: {source}]\n{text}")
 
         formatted_context = "\n---\n".join(context_parts)
-
-        reasoning_steps.append(
-            f"🔗 Using top {min(len(all_docs), MAX_DOCS_FOR_CONTEXT)} chunks "
-            f"with max {MAX_CONTEXT_CHARS} context chars"
-        )
 
         sources = [
             {
@@ -163,7 +126,45 @@ class RAGService:
         )
 
         if is_mcq_request:
-            reasoning_steps.append("🧪 Fast strict MCQ generation mode enabled")
+            reasoning_steps.append("🧪 Strict MCQ mode enabled")
+
+            def get_answer_text(block: str) -> str:
+                options = dict(
+                    re.findall(
+                        r"^\s*([A-D])\.\s*(.+?)\s*$",
+                        block,
+                        flags=re.MULTILINE,
+                    )
+                )
+
+                answer_match = re.search(
+                    r"Correct answer\s*:\s*([A-D])\b",
+                    block,
+                    flags=re.IGNORECASE,
+                )
+
+                if not answer_match:
+                    return ""
+
+                letter = answer_match.group(1).upper()
+                return options.get(letter, "").strip()
+
+            def has_ambiguous_options(block: str) -> bool:
+                options = [
+                    option.strip().lower()
+                    for _, option in re.findall(
+                        r"^\s*([A-D])\.\s*(.+?)\s*$",
+                        block,
+                        flags=re.MULTILINE,
+                    )
+                ]
+
+                for i in range(len(options)):
+                    for j in range(i + 1, len(options)):
+                        if options[i] in options[j] or options[j] in options[i]:
+                            return True
+
+                return False
 
             def mcq_is_valid(text: str) -> bool:
                 text = (text or "").strip()
@@ -188,18 +189,6 @@ class RAGService:
                     return False
 
                 for block in blocks:
-                    question_match = re.search(
-                        r"^Q\d+\s*(?:\([^)]+\))?\s*:\s*(.+?)\n\s*A\.",
-                        block,
-                        flags=re.IGNORECASE | re.DOTALL,
-                    )
-
-                    if not question_match:
-                        return False
-
-                    if len(question_match.group(1).strip()) < 10:
-                        return False
-
                     options = re.findall(
                         r"^\s*([A-D])\.\s*(.+?)\s*$",
                         block,
@@ -210,31 +199,48 @@ class RAGService:
                         return False
 
                     letters = [letter.upper() for letter, _ in options]
-
                     if letters != ["A", "B", "C", "D"]:
                         return False
 
                     for _, option_text in options:
-                        cleaned_option = option_text.strip()
+                        cleaned = option_text.strip().lower()
 
-                        if len(cleaned_option) < 3:
+                        if len(cleaned) < 3:
                             return False
 
-                        if cleaned_option.lower() in {
+                        if cleaned in {
                             "all of the above",
                             "none of the above",
                             "both a and b",
                             "both b and c",
+                            "both a and c",
+                            "both c and d",
                         }:
                             return False
 
-                    answer_match = re.search(
+                    if not re.search(
                         r"Correct answer\s*:\s*([A-D])\b",
                         block,
-                        flags=re.IGNORECASE,
-                    )
+                        re.IGNORECASE,
+                    ):
+                        return False
 
-                    if not answer_match:
+                    answer_text = get_answer_text(block)
+
+                    if not answer_text:
+                        return False
+
+                    if answer_text.lower() not in formatted_context.lower():
+                        return False
+
+                    if has_ambiguous_options(block):
+                        return False
+
+                    if not re.search(
+                        r"Explanation\s*:\s*(.+)",
+                        block,
+                        re.IGNORECASE | re.DOTALL,
+                    ):
                         return False
 
                 return True
@@ -242,31 +248,23 @@ class RAGService:
             strict_mcq_prompt = f"""
 You are a strict exam MCQ generator.
 
-Use ONLY the PDF context below.
-Do not use outside knowledge.
-Do not explain your steps.
+Generate exactly 5 MCQs from the provided PDF context.
+
+Requirements:
+- Use ONLY the provided context.
+- Create 4 options for each question: A, B, C, D.
+- Only ONE option must be correct.
+- Avoid ambiguous wording.
+- Do not invent information.
+- Keep explanations short.
+- Difficulty must be exactly: 3 Hard + 2 Medium.
+- No All of the above.
+- No None of the above.
+- No Both A and B.
+- Output ONLY the quiz.
 
 PDF CONTEXT:
 {formatted_context}
-
-TASK:
-Generate exactly 5 multiple-choice questions from the PDF context.
-
-STRICT RULES:
-- Generate exactly 5 questions.
-- Difficulty must be exactly: 3 Hard + 2 Medium.
-- Every question MUST have four options: A, B, C, D.
-- A, B, C, and D must NEVER be empty.
-- Each option must be meaningful.
-- Wrong options must be plausible and related to the PDF.
-- Correct answer must be ONE letter only: A, B, C, or D.
-- Do NOT use All of the above.
-- Do NOT use None of the above.
-- Do NOT use Both A and B.
-- Keep options short.
-- Avoid headings and copied long sentences.
-- Add a short explanation for each answer.
-- Output ONLY the quiz.
 
 FORMAT EXACTLY:
 
@@ -314,21 +312,48 @@ Explanation: short explanation
             response = llm.invoke(strict_mcq_prompt)
             response = response.content if hasattr(response, "content") else str(response)
 
-            if not mcq_is_valid(response):
-                reasoning_steps.append("⚠️ First MCQ output invalid. Retrying once.")
+            validator_prompt = f"""
+Validate this MCQ quiz.
+
+Rules:
+- Reject if two answers can be correct.
+- Reject if any correct answer is unsupported by the context.
+- Reject hallucinations.
+- Reject ambiguous questions.
+- Reject if explanation contradicts the correct answer.
+- Return only VALID or INVALID.
+
+Context:
+{formatted_context}
+
+MCQ:
+{response}
+""".strip()
+
+            validation = validator_llm.invoke(validator_prompt)
+            validation = validation.content if hasattr(validation, "content") else str(validation)
+
+            if (not mcq_is_valid(response)) or ("INVALID" in validation.upper()):
+                reasoning_steps.append("⚠️ MCQ invalid or rejected by phi3. Retrying once.")
 
                 retry_prompt = f"""
 The previous output was invalid.
 
-Regenerate from scratch using ONLY this PDF context:
-{formatted_context}
+Regenerate from scratch using ONLY this PDF context.
 
-Generate exactly 5 MCQs.
-Use exactly 3 Hard and 2 Medium.
-Every question must have A, B, C, D.
-No empty options.
-Correct answer must be one letter only.
-Output only the quiz.
+Rules:
+- Generate exactly 5 MCQs.
+- Use exactly 3 Hard and 2 Medium.
+- Every question must have A, B, C, D.
+- Only ONE answer can be correct.
+- No empty options.
+- No All/None/Both of the above.
+- Correct answer must be one letter only.
+- Add short explanation.
+- Output only the quiz.
+
+PDF CONTEXT:
+{formatted_context}
 
 Required format:
 Q1 (Hard): question text
@@ -378,9 +403,8 @@ Explanation: short explanation
             if not mcq_is_valid(response):
                 reasoning_steps.append("❌ Strict MCQ validation failed after retry.")
                 response = (
-                    "The local model generated incomplete MCQs. "
-                    "Please click Generate again or use a stronger local model. "
-                    "No invalid quiz was accepted."
+                    "The local model generated incomplete or invalid MCQs. "
+                    "Please click Generate again. No invalid quiz was accepted."
                 )
             else:
                 reasoning_steps.append("✅ Strict MCQ quiz generated and validated")
@@ -391,9 +415,7 @@ Explanation: short explanation
 Use ONLY the PDF context below.
 
 Do not use outside knowledge.
-Do not explain your internal reasoning.
 Answer clearly and directly.
-Mention the source document name when helpful.
 
 Context:
 {formatted_context}
@@ -404,12 +426,8 @@ Question:
 Answer:
 """.strip()
 
-        reasoning_steps.append("💭 Generating fast RAG answer...")
-
         response = llm.invoke(general_prompt)
         response = response.content if hasattr(response, "content") else str(response)
-
-        reasoning_steps.append("✨ Answer generated successfully!")
 
         return response, sources, reasoning_steps
 
@@ -457,4 +475,3 @@ Answer:
         return db.query(ChatMessage).filter(
             ChatMessage.session_id == session_id
         ).order_by(ChatMessage.timestamp).all()
-        
