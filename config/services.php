@@ -7,11 +7,17 @@ return [
     | Third Party Services
     |--------------------------------------------------------------------------
     */
+<<<<<<< HEAD
 
     'summary_service' => [
         'url' => env('SUMMARY_SERVICE_URL', 'http://127.0.0.1:8002'),
     ],
 
+=======
+'summary_service' => [
+    'url' => env('SUMMARY_SERVICE_URL', 'http://127.0.0.1:8002'),
+],
+>>>>>>> 5de6b92afe45ea89be5b5da0aad350274a62d288
     'postmark' => [
         'token' => env('POSTMARK_TOKEN'),
     ],

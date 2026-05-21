@@ -68,8 +68,14 @@ class LinkSummaryController extends Controller
         $processEnv = [
             'SystemRoot' => getenv('SystemRoot') ?: 'C:\\Windows',
             'WINDIR' => getenv('WINDIR') ?: 'C:\\Windows',
+<<<<<<< HEAD
 
             // Important: pass Deno path to child process
+=======
+            'LINK_FFMPEG_LOCATION' => env('LINK_FFMPEG_LOCATION', 'C:\Users\User\Desktop\ffmpeg_extracted\ffmpeg-8.1-essentials_build\bin\ffmpeg.exe'),
+            'GROQ_API_KEY' => env('GROQ_API_KEY', ''),
+'GROQ_WHISPER_MODEL' => env('GROQ_WHISPER_MODEL', 'whisper-large-v3-turbo'),            'LINK_ALWAYS_TRANSCRIBE_AUDIO' => env('LINK_ALWAYS_TRANSCRIBE_AUDIO') ? 'true' : 'false',            // Important: pass Deno path to child process
+>>>>>>> 5de6b92afe45ea89be5b5da0aad350274a62d288
             'Path' => $currentPath,
             'PATH' => $currentPath,
 
@@ -83,6 +89,7 @@ class LinkSummaryController extends Controller
 
             // Local Ollama model for link summaries
             'OLLAMA_HOST' => env('OLLAMA_HOST', 'http://127.0.0.1:11434'),
+<<<<<<< HEAD
             'OLLAMA_MODEL' => env('LINK_SUMMARY_MODEL', env('OLLAMA_MODEL', 'qwen2.5:1.5b')),
             'LINK_SUMMARY_MODEL' => env('LINK_SUMMARY_MODEL', env('OLLAMA_MODEL', 'qwen2.5:1.5b')),
 
@@ -95,6 +102,13 @@ class LinkSummaryController extends Controller
             'GROQ_API_KEY' => env('GROQ_API_KEY', ''),
             'GROQ_WHISPER_MODEL' => env('GROQ_WHISPER_MODEL', 'whisper-large-v3-turbo'),
             'LINK_ALWAYS_TRANSCRIBE_AUDIO' => env('LINK_ALWAYS_TRANSCRIBE_AUDIO') ? 'true' : 'false',
+=======
+            'OLLAMA_MODEL' => env('LINK_SUMMARY_MODEL', 'qwen2.5:1.5b'),
+            'LINK_SUMMARY_MODEL' => env('LINK_SUMMARY_MODEL', 'qwen2.5:1.5b'),
+
+            // Video transcription settings
+            'LINK_WHISPER_MODEL' => env('LINK_WHISPER_MODEL', 'tiny'),
+>>>>>>> 5de6b92afe45ea89be5b5da0aad350274a62d288
 
             // YouTube fix: tell Python/yt-dlp to use Deno
             'LINK_YTDLP_JS_RUNTIME' => env('LINK_YTDLP_JS_RUNTIME', 'deno'),
@@ -140,10 +154,13 @@ class LinkSummaryController extends Controller
                     'deno_bin_exists' => is_dir($denoBin),
                     'link_ytdlp_js_runtime' => $processEnv['LINK_YTDLP_JS_RUNTIME'],
                     'link_ytdlp_cookies_from_browser' => $processEnv['LINK_YTDLP_COOKIES_FROM_BROWSER'],
+<<<<<<< HEAD
                     'link_ffmpeg_location' => $processEnv['LINK_FFMPEG_LOCATION'],
                     'groq_key_exists' => !empty($processEnv['GROQ_API_KEY']),
                     'groq_whisper_model' => $processEnv['GROQ_WHISPER_MODEL'],
                     'link_always_transcribe_audio' => $processEnv['LINK_ALWAYS_TRANSCRIBE_AUDIO'],
+=======
+>>>>>>> 5de6b92afe45ea89be5b5da0aad350274a62d288
                 ],
             ], 500);
         }
