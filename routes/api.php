@@ -18,10 +18,7 @@ use App\Http\Controllers\Api\Admin\AdminUsersController;
 use App\Http\Controllers\Api\Admin\AdminNotesController;
 use App\Http\Controllers\Api\LinkSummaryController;
 use App\Http\Controllers\Api\AiConversationController;
-<<<<<<< HEAD
 use App\Http\Controllers\Api\SummaryServiceController;
-=======
->>>>>>> 5de6b92afe45ea89be5b5da0aad350274a62d288
 
 /*
 |--------------------------------------------------------------------------
@@ -35,10 +32,7 @@ Route::get('/ping', function () {
         'message' => 'API is working',
     ], 200);
 });
-<<<<<<< HEAD
 
-=======
->>>>>>> 5de6b92afe45ea89be5b5da0aad350274a62d288
 /*
 |--------------------------------------------------------------------------
 | Feedback
@@ -189,7 +183,6 @@ Route::post('/ai/link-summary', [LinkSummaryController::class, 'summarize']);
 
 /*
 |--------------------------------------------------------------------------
-<<<<<<< HEAD
 | Summary Service
 |--------------------------------------------------------------------------
 */
@@ -199,8 +192,6 @@ Route::post('/summary-service/text', [SummaryServiceController::class, 'text']);
 
 /*
 |--------------------------------------------------------------------------
-=======
->>>>>>> 5de6b92afe45ea89be5b5da0aad350274a62d288
 | Admin Routes
 |--------------------------------------------------------------------------
 */
@@ -246,10 +237,3 @@ Route::get('/ai/test', function () {
 Route::options('/{any}', function () {
     return response()->json([], 200);
 })->where('any', '.*');
-<<<<<<< HEAD
-=======
-use App\Http\Controllers\Api\SummaryServiceController;
-
-Route::post('/summary-service/upload', [SummaryServiceController::class, 'upload']);
-Route::post('/summary-service/text', [SummaryServiceController::class, 'text']);
->>>>>>> 5de6b92afe45ea89be5b5da0aad350274a62d288
