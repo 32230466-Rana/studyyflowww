@@ -1,75 +1,116 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { authAPI } from '../api/endpoints';
-
-const AuthContext = createContext();
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { authAPI } from "../api/endpoints";
+export { AuthProvider, useAuth } from "../auth/AuthContext.jsx";
+const AuthContext = createContext(null);
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return context;
+    const context = useContext(AuthContext);
+
+    if (!context) {
+        throw new Error("useAuth must be used within AuthProvider");
+    }
+
+    return context;
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [user, setUser] = useState(null);
+    const [token, setToken] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-  // Load user from localStorage on mount
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    const storedToken = localStorage.getItem('authToken');
+    useEffect(() => {
+        try {
+            const savedToken = localStorage.getItem("authToken");
+            const savedUser = localStorage.getItem("user");
 
-    if (storedUser && storedToken) {
-      setUser(JSON.parse(storedUser));
-      setToken(storedToken);
-      setIsAuthenticated(true);
-    }
+            if (savedToken && savedUser) {
+                setToken(savedToken);
+                setUser(JSON.parse(savedUser));
+            }
+        } catch (error) {
+            console.log("Auth load error:", error);
+            localStorage.removeItem("authToken");
+            localStorage.removeItem("user");
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
-    setLoading(false);
-  }, []);
+    const saveAuth = (userData, authToken) => {
+        localStorage.setItem("authToken", authToken);
+        localStorage.setItem("user", JSON.stringify(userData));
 
-  const login = (userData, token) => {
-    localStorage.setItem('authToken', token);
-    localStorage.setItem('user', JSON.stringify(userData));
-    setUser(userData);
-    setToken(token);
-    setIsAuthenticated(true);
-  };
+        setUser(userData);
+        setToken(authToken);
+    };
 
-  const logout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('user');
-    setUser(null);
-    setToken(null);
-    setIsAuthenticated(false);
-  };
+    const login = async ({ email, password }) => {
+        const response = await authAPI.login({ email, password });
+        const data = response.data;
 
-  const updateUser = (userData) => {
-    setUser((currentUser) => {
-      const nextUser = currentUser ? { ...currentUser, ...userData } : userData;
-      localStorage.setItem('user', JSON.stringify(nextUser));
-      return nextUser;
-    });
-  };
+        console.log("LOGIN RESPONSE:", data);
 
-  const value = {
-    user,
-    token,
-    loading,
-    isAuthenticated,
-    login,
-    logout,
-    updateUser,
-    isAdmin: user?.is_admin || false,
-    isVerified: user?.is_verified || false,
-  };
+        const returnedToken =
+            data.token ||
+            data.access_token ||
+            data.authToken ||
+            data.plainTextToken ||
+            data.data?.token ||
+            data.data?.access_token ||
+            data.data?.plainTextToken;
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+        const returnedUser =
+            data.user ||
+            data.auth_user ||
+            data.data?.user ||
+            data.data?.auth_user ||
+            data.data;
+
+        if (!returnedToken || !returnedUser) {
+            throw new Error("Login response missing user or token.");
+        }
+
+        saveAuth(returnedUser, returnedToken);
+
+        return {
+            user: returnedUser,
+            token: returnedToken,
+            raw: data,
+        };
+    };
+
+    const logout = async () => {
+        try {
+            await authAPI.logout();
+        } catch (error) {
+            console.log("Logout error:", error);
+        } finally {
+            localStorage.removeItem("authToken");
+            localStorage.removeItem("user");
+            setUser(null);
+            setToken(null);
+        }
+    };
+
+    const updateUser = (userData) => {
+        setUser((currentUser) => {
+            const nextUser = currentUser ? { ...currentUser, ...userData } : userData;
+            localStorage.setItem("user", JSON.stringify(nextUser));
+            return nextUser;
+        });
+    };
+
+    const value = {
+        user,
+        token,
+        loading,
+        login,
+        logout,
+        updateUser,
+        isAuthenticated: Boolean(token),
+        isAdmin: user?.is_admin || user?.role === "admin" || false,
+        isVerified: user?.is_verified || false,
+    };
+
+    return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

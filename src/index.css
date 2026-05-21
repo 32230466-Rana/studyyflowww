@@ -21,3 +21,132 @@ a {
   text-decoration: none;
   color: inherit;
 }
+.announcement-banner {
+    width: 100%;
+    max-width: 980px;
+    margin: 0 auto 22px;
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: linear-gradient(135deg, #fff7ed 0%, #eef2ff 100%);
+    border: 1px solid rgba(99, 102, 241, 0.18);
+    border-radius: 18px;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.announcement-bell-wrap {
+    position: relative;
+    width: 46px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 8px 18px rgba(99, 102, 241, 0.16);
+    flex: 0 0 auto;
+}
+
+.announcement-bell {
+    font-size: 24px;
+    display: inline-block;
+    animation: bellRing 1.4s ease-in-out infinite;
+    transform-origin: top center;
+}
+
+.announcement-pulse {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 10px;
+    height: 10px;
+    background: #ef4444;
+    border-radius: 50%;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
+    animation: pulseDot 1.4s infinite;
+}
+
+.announcement-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.announcement-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: #111827;
+    margin-bottom: 4px;
+}
+
+.announcement-text {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.announcement-link {
+    flex: 0 0 auto;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #6366f1;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    box-shadow: 0 10px 18px rgba(99, 102, 241, 0.2);
+}
+
+.announcement-link:hover {
+    transform: translateY(-1px);
+}
+
+@keyframes bellRing {
+    0% {
+        transform: rotate(0deg);
+    }
+    10% {
+        transform: rotate(14deg);
+    }
+    20% {
+        transform: rotate(-12deg);
+    }
+    30% {
+        transform: rotate(10deg);
+    }
+    40% {
+        transform: rotate(-8deg);
+    }
+    50% {
+        transform: rotate(5deg);
+    }
+    60%,
+    100% {
+        transform: rotate(0deg);
+    }
+}
+
+@keyframes pulseDot {
+    0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
+}
+
+@media (max-width: 768px) {
+    .announcement-banner {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .announcement-link {
+        width: 100%;
+        text-align: center;
+    }
+}

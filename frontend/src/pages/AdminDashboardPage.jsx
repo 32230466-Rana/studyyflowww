@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axiosClient from "../api/axiosClient";
 
+
 const emptyDashboard = {
   totalUsers: 0,
-  aiUsageCount: 0,
   totalNotes: 0,
   totalAdmins: 0,
   featuredNotes: 0,
@@ -139,16 +139,16 @@ const normalizeDashboard = (payload) => {
       "stats.summary_count",
     ]),
 
-    aaiUsageCount: pickNumber(root, [
-  "aiUsageCount",
-  "ai_usage_count",
-  "stats.aiUsageCount",
-  "stats.ai_usage_count",
-  "ai_usage_total",
-  "stats.ai_usage_total",
-  "counts.aiUsageCount",
-  "counts.ai_usage_count",
-]),
+    aiUsageCount: pickNumber(root, [
+      "aiUsageCount",
+      "ai_usage_count",
+      "stats.aiUsageCount",
+      "stats.ai_usage_count",
+      "ai_usage_total",
+      "stats.ai_usage_total",
+      "counts.aiUsageCount",
+      "counts.ai_usage_count",
+    ]),
 
     activeUsers: pickNumber(root, [
       "activeUsers",
@@ -211,6 +211,7 @@ const normalizeDashboard = (payload) => {
         "user_growth",
         "charts.userGrowth",
         "charts.user_growth",
+        "charts.users_growth",
       ]),
       emptyDashboard.userGrowth
     ),
@@ -219,8 +220,11 @@ const normalizeDashboard = (payload) => {
       pickArray(root, [
         "notesGrowth",
         "notes_growth",
+        "notesUploads",
+        "notes_uploads",
         "charts.notesGrowth",
         "charts.notes_growth",
+        "charts.notes_uploads",
       ]),
       emptyDashboard.notesGrowth
     ),
@@ -308,6 +312,7 @@ const formatDate = (value) => {
 
   return date.toLocaleDateString();
 };
+
 const FeatureCard = ({ title, icon, points, variant = "blue", onClick }) => {
   const handlePointClick = (e, point) => {
     e.stopPropagation();
@@ -362,6 +367,7 @@ const FeatureCard = ({ title, icon, points, variant = "blue", onClick }) => {
     </div>
   );
 };
+
 const MetricBox = ({ icon, label, value }) => {
   return (
     <div className="admin-metric-box">
@@ -533,7 +539,8 @@ export default function AdminDashboardPage() {
       {
         icon: "🤖",
         label: "AI Usage",
-        value: dashboard.aiUsageCount || dashboard.aiRequests || dashboard.aiSummaries,
+        value:
+          dashboard.aiUsageCount || dashboard.aiRequests || dashboard.aiSummaries,
         variant: "purple",
       },
       {
@@ -573,7 +580,8 @@ export default function AdminDashboardPage() {
       {
         icon: "🤖",
         label: "AI Requests",
-        value: dashboard.aiUsageCount || dashboard.aiRequests || dashboard.aiSummaries,
+        value:
+          dashboard.aiUsageCount || dashboard.aiRequests || dashboard.aiSummaries,
       },
       {
         icon: "📝",
@@ -583,136 +591,23 @@ export default function AdminDashboardPage() {
     ],
     [dashboard]
   );
+
   const aiUsageChartValues =
-  Array.isArray(dashboard.aiUsage) &&
-  dashboard.aiUsage.some((v) => Number(v) > 0)
-    ? dashboard.aiUsage
-    : [0, 0, 0, 0, 0, 0, dashboard.aiUsageCount || 0];
+    Array.isArray(dashboard.aiUsage) &&
+    dashboard.aiUsage.some((v) => Number(v) > 0)
+      ? dashboard.aiUsage
+      : [0, 0, 0, 0, 0, 0, dashboard.aiUsageCount || 0];
 
-const quizAndSummaryValues = [
-  dashboard.quizzesCreated || 0,
-  dashboard.aiSummaries || 0,
-  dashboard.aiUsageCount || 0,
-  dashboard.totalNotes || 0,
-  dashboard.activeUsers || 0,
-];
-const scrollToSection = (id) => {
-  const element = document.getElementById(id);
-
-  if (element) {
-    element.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  }
-};
-
-const handleFeaturePath = (path) => {
-  if (!path) return;
-
-  if (path.startsWith("#")) {
-    scrollToSection(path.replace("#", ""));
-    return;
-  }
-
-  navigate(path);
-};
- const featureCards = [
-  {
-    title: "User Management",
-    icon: "👤",
-    variant: "blue",
-    path: "/admin/users",
-    points: [
-      "Add / Update / Delete Users",
-      "Role Control Admin / Student",
-      "Search & Filters",
-    ],
-  },
-  {
-    title: "Notes Management",
-    icon: "📚",
-    variant: "green",
-    path: "/admin/notes",
-    points: [
-      "View / Delete Notes",
-      "Reprocess Notes",
-      "File Filters & Status",
-    ],
-  },
-  {
-    title: "AI Management",
-    icon: "🤖",
-    variant: "purple",
-    path: "#ai-usage-section",
-    points: [
-      {
-        label: "Summary Stats",
-        action: () => scrollToSection("summary-table"),
-      },
-      {
-        label: "Quiz Stats",
-        action: () => scrollToSection("quiz-table"),
-      },
-      {
-        label: "AI Usage Reports",
-        action: () => scrollToSection("ai-usage-section"),
-      },
-    ],
-  },
-  {
-    title: "Quiz Management",
-    icon: "✅",
-    variant: "orange",
-    path: "#quiz-table",
-    points: [
-      {
-        label: "View / Edit Quizzes",
-        action: () => scrollToSection("quiz-table"),
-      },
-      {
-        label: "Regenerate Quizzes",
-        action: () => navigate("/quiz"),
-      },
-      {
-        label: "Difficulty Levels",
-        action: () => scrollToSection("quiz-table"),
-      },
-    ],
-  },
-];
-
-  const bottomCards = [
-    {
-      title: "Announcements",
-      icon: "📣",
-      variant: "orange",
-      points: ["Post Updates", "Manage Alerts"],
-    },
-    {
-      title: "Featured Materials",
-      icon: "⭐",
-      variant: "green",
-      points: ["Highlight Notes", "Promote Content"],
-    },
-    {
-      title: "Reports & Feedback",
-      icon: "⚠️",
-      variant: "blue",
-      points: ["Review Issues", "User Reports"],
-    },
-    {
-      title: "System Settings",
-      icon: "⚙️",
-      variant: "purple",
-      points: ["File Limits", "AI Options"],
-    },
+  const quizAndSummaryValues = [
+    dashboard.quizzesCreated || 0,
+    dashboard.aiSummaries || 0,
+    dashboard.aiUsageCount || 0,
+    dashboard.totalNotes || 0,
+    dashboard.activeUsers || 0,
   ];
-const handleFeatureClick = (path) => {
-  if (!path) return;
 
-  if (path.startsWith("#")) {
-    const element = document.querySelector(path);
+  const scrollToSection = (id) => {
+    const element = document.getElementById(id);
 
     if (element) {
       element.scrollIntoView({
@@ -720,12 +615,137 @@ const handleFeatureClick = (path) => {
         block: "start",
       });
     }
+  };
 
-    return;
-  }
+  const handleFeatureClick = (path) => {
+    if (!path) return;
 
-  navigate(path);
-};
+    if (path.startsWith("#")) {
+      scrollToSection(path.replace("#", ""));
+      return;
+    }
+
+    navigate(path);
+  };
+
+  const featureCards = [
+    {
+      title: "User Management",
+      icon: "👤",
+      variant: "blue",
+      path: "/admin/users",
+      points: [
+        "Add / Update / Delete Users",
+        "Role Control Admin / Student",
+        "Search & Filters",
+      ],
+    },
+    {
+      title: "Notes Management",
+      icon: "📚",
+      variant: "green",
+      path: "/admin/notes",
+      points: [
+        "View / Delete Notes",
+        "Reprocess Notes",
+        "File Filters & Status",
+      ],
+    },
+    {
+  title: "AI Management",
+  icon: "🤖",
+  variant: "purple",
+  path: "/admin/ai-management",
+  points: [
+    "Summary Stats",
+    "Quiz Stats",
+    "AI Usage Reports",
+  ],
+},
+    {
+      title: "Quiz Management",
+      icon: "✅",
+      variant: "orange",
+      path: "#quiz-table",
+      points: [
+        {
+          label: "View / Edit Quizzes",
+          action: () => scrollToSection("quiz-table"),
+        },
+        {
+          label: "Regenerate Quizzes",
+          action: () => navigate("/quiz"),
+        },
+      ],
+    },
+  ];
+
+const bottomCards = [
+  {
+    title: "Announcements",
+    icon: "📣",
+    variant: "orange",
+    path: "/admin/announcements",
+    points: [
+      {
+        label: "Post Updates",
+        action: () => navigate("/admin/announcements"),
+      },
+      {
+        label: "Manage Alerts",
+        action: () => navigate("/admin/announcements"),
+      },
+    ],
+  },
+  {
+    title: "Featured Materials",
+    icon: "⭐",
+    variant: "green",
+    path: "/admin/notes?focus=featured",
+    points: [
+      {
+        label: "Highlight Notes",
+        action: () => navigate("/admin/notes?focus=featured"),
+      },
+      {
+        label: "Promote Content",
+        action: () => navigate("/admin/notes?section=featured"),
+      },
+    ],
+  },
+  {
+    title: "Reports & Feedback",
+    icon: "⚠️",
+    variant: "blue",
+    path: "/admin/feedback",
+    points: [
+      {
+        label: "Review Issues",
+        action: () => navigate("/admin/feedback"),
+      },
+      {
+        label: "User Reports",
+        action: () => navigate("/admin/feedback"),
+      },
+    ],
+  },
+  {
+    title: "System Settings",
+    icon: "⚙️",
+    variant: "purple",
+    path: "/admin/settings",
+    points: [
+      {
+        label: "File Limits",
+        action: () => navigate("/admin/settings"),
+      },
+      {
+        label: "AI Options",
+        action: () => navigate("/admin/settings"),
+      },
+    ],
+  },
+];
   return (
     <div className="admin-feature-page">
       <style>{`
@@ -739,10 +759,11 @@ const handleFeatureClick = (path) => {
         }
 
         .admin-feature-shell {
-  width: 100%;
-  max-width: none;
-  margin: 0;
-}
+          width: 100%;
+          max-width: none;
+          margin: 0;
+        }
+
         .admin-feature-top {
           display: flex;
           align-items: center;
@@ -849,7 +870,9 @@ const handleFeatureClick = (path) => {
           font-weight: 700;
         }
 
-        .top-stats-grid {
+        .top-stats-grid,
+        .admin-feature-grid,
+        .bottom-grid {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 16px;
@@ -906,13 +929,6 @@ const handleFeatureClick = (path) => {
           font-weight: 800;
         }
 
-        .admin-feature-grid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 16px;
-          margin-bottom: 18px;
-        }
-
         .admin-feature-card {
           position: relative;
           overflow: hidden;
@@ -959,52 +975,39 @@ const handleFeatureClick = (path) => {
           background: #f97316;
         }
 
-    
+        .admin-feature-card-head {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+        }
 
-.admin-feature-card h3 {
-  margin: 0;
-  color: #164b8f;
-  font-size: clamp(20px, 1.35vw, 23px);
-  line-height: 1.35;
-  font-weight: 950;
-  flex: 1;
-  min-width: 0;
-}
+        .admin-feature-card h3 {
+          margin: 0;
+          color: #164b8f;
+          font-size: clamp(20px, 1.35vw, 23px);
+          line-height: 1.35;
+          font-weight: 950;
+          flex: 1;
+          min-width: 0;
+        }
 
-.admin-feature-card-head {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
+        .admin-feature-card-head span {
+          display: grid;
+          place-items: center;
+          width: 54px;
+          height: 54px;
+          min-width: 54px;
+          flex: 0 0 54px;
+          border-radius: 18px;
+          background: #eff6ff;
+          font-size: 28px;
+          position: relative;
+          z-index: 3;
+        }
 
-.admin-feature-card h3 {
-  margin: 0;
-  color: #164b8f;
-  font-size: clamp(20px, 1.35vw, 23px);
-  line-height: 1.35;
-  font-weight: 950;
-  flex: 1;
-  min-width: 0;
-}
-
-.admin-feature-card-head span {
-  display: grid;
-  place-items: center;
-  width: 54px;
-  height: 54px;
-  min-width: 54px;
-  flex: 0 0 54px;
-  border-radius: 18px;
-  background: #eff6ff;
-  font-size: 28px;
-  position: relative;
-  z-index: 3;
-}
-
-        
         .admin-feature-line {
           position: relative;
           z-index: 1;
@@ -1031,26 +1034,28 @@ const handleFeatureClick = (path) => {
           font-weight: 800;
           font-size: 15px;
         }
-.admin-feature-point-btn {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: #16406f;
-  font-weight: 800;
-  font-size: 15px;
-  text-align: left;
-  cursor: pointer;
-  transition: 0.2s ease;
-}
 
-.admin-feature-point-btn:hover {
-  color: #2563eb;
-  transform: translateX(3px);
-}
+        .admin-feature-point-btn {
+          border: 0;
+          background: transparent;
+          padding: 0;
+          margin: 0;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          color: #16406f;
+          font-weight: 800;
+          font-size: 15px;
+          text-align: left;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+
+        .admin-feature-point-btn:hover {
+          color: #2563eb;
+          transform: translateX(3px);
+        }
+
         .dot {
           width: 10px;
           height: 10px;
@@ -1228,13 +1233,6 @@ const handleFeatureClick = (path) => {
           min-height: 12px;
         }
 
-        .bottom-grid {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 16px;
-          margin-bottom: 18px;
-        }
-
         .table-grid {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1409,23 +1407,23 @@ const handleFeatureClick = (path) => {
         }
 
         @media (max-width: 760px) {
-    .admin-feature-page {
-  min-height: calc(100vh - 60px);
-  width: 100%;
-  padding: 24px 32px;
-  margin: 0;
-  background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.16), transparent 30%),
-    linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
-  color: #172033;
-  box-sizing: border-box;
-}
+          .admin-feature-page {
+            min-height: calc(100vh - 60px);
+            width: 100%;
+            padding: 24px 32px;
+            margin: 0;
+            background:
+              radial-gradient(circle at top left, rgba(59, 130, 246, 0.16), transparent 30%),
+              linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
+            color: #172033;
+            box-sizing: border-box;
+          }
 
-.admin-feature-shell {
-  width: 100%;
-  max-width: 100%;
-  margin: 0;
-}
+          .admin-feature-shell {
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+          }
 
           .admin-feature-top {
             align-items: flex-start;
@@ -1494,7 +1492,7 @@ const handleFeatureClick = (path) => {
             <FeatureCard
               key={card.title}
               {...card}
-            onClick={() => handleFeatureClick(card.path)}
+              onClick={() => handleFeatureClick(card.path)}
             />
           ))}
         </section>
@@ -1523,11 +1521,12 @@ const handleFeatureClick = (path) => {
               <MiniBarChart values={dashboard.notesGrowth} />
             </div>
 
-            <div className="chart-panel">
+            <div id="ai-usage-section" className="chart-panel">
               <h3>AI Usage</h3>
               <p>AI requests / Ask Note usage</p>
+              <MiniLineChart values={aiUsageChartValues} />
             </div>
-<MiniLineChart values={aiUsageChartValues} />
+
             <div className="chart-panel">
               <h3>Quiz And Summary Stats</h3>
               <p>Quizzes and summaries activity</p>
@@ -1537,11 +1536,14 @@ const handleFeatureClick = (path) => {
         </section>
 
         <section className="bottom-grid">
-          {bottomCards.map((card) => (
-            <FeatureCard key={card.title} {...card} onClick={() => {}} />
-          ))}
-        </section>
-
+  {bottomCards.map((card) => (
+    <FeatureCard
+      key={card.title}
+      {...card}
+      onClick={() => handleFeatureClick(card.path)}
+    />
+  ))}
+</section>
         <section className="table-grid">
           <div className="admin-table-card">
             <h3>Users Table</h3>
@@ -1566,13 +1568,11 @@ const handleFeatureClick = (path) => {
                         <td>{user.email ?? "-"}</td>
                         <td>
                           <span className="role-pill">
-                            {user.role ?? "user"}
+                            {user.role ?? (user.is_admin ? "admin" : "user")}
                           </span>
                         </td>
                         <td>
-                          <StatusPill>
-                            {user.status ?? "active"}
-                          </StatusPill>
+                          <StatusPill>{user.status ?? "active"}</StatusPill>
                         </td>
                         <td>{formatDate(user.created_at ?? user.createdAt)}</td>
                       </tr>
@@ -1615,7 +1615,7 @@ const handleFeatureClick = (path) => {
                             note.owner ??
                             "-"}
                         </td>
-                        <td>{note.source ?? note.type ?? "file"}</td>
+                        <td>{note.source ?? note.type ?? note.source_type ?? "file"}</td>
                         <td>
                           {note.is_featured || note.featured ? (
                             <StatusPill>Yes</StatusPill>
@@ -1638,67 +1638,64 @@ const handleFeatureClick = (path) => {
             </div>
           </div>
 
-     <div id="quiz-table" className="admin-table-card">
-  <h3>Quiz Table</h3>
+          <div id="quiz-table" className="admin-table-card">
+            <h3>Quiz Table</h3>
 
-  <div className="table-scroll">
-    <table className="admin-table">
-      <thead>
-        <tr>
-          <th>Note</th>
-          <th>Difficulty</th>
-          <th>Questions</th>
-          <th>Grade</th>
-          <th>Status</th>
-          <th>Created</th>
-        </tr>
-      </thead>
+            <div className="table-scroll">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Note</th>
+                    <th>Questions</th>
+                    <th>Grade</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
 
-      <tbody>
-        {dashboard.recentQuizzes.length > 0 ? (
-          dashboard.recentQuizzes.slice(0, 5).map((quiz, index) => (
-            <tr key={quiz.id ?? index}>
-              <td>{quiz.note?.title ?? quiz.note_title ?? "Quiz"}</td>
+                <tbody>
+                  {dashboard.recentQuizzes.length > 0 ? (
+                    dashboard.recentQuizzes.slice(0, 5).map((quiz, index) => (
+                      <tr key={quiz.id ?? index}>
+                        <td>{quiz.note?.title ?? quiz.note_title ?? "Quiz"}</td>
 
-              <td>{quiz.difficulty ?? "Mixed"}</td>
+                        <td>
+                          {quiz.questions_count ??
+                            quiz.number_of_questions ??
+                            quiz.questions?.length ??
+                            5}
+                        </td>
 
-              <td>
-                {quiz.questions_count ??
-                  quiz.number_of_questions ??
-                  quiz.questions?.length ??
-                  5}
-              </td>
+                        <td>
+                          {quiz.grade ??
+                            quiz.score ??
+                            quiz.percentage ??
+                            "-"}
+                        </td>
 
-              <td>
-                {quiz.grade ??
-                  quiz.score ??
-                  quiz.percentage ??
-                  "-"}
-              </td>
+                        <td>
+                          <StatusPill type="generated">
+                            {quiz.status ?? "generated"}
+                          </StatusPill>
+                        </td>
 
-              <td>
-                <StatusPill type="generated">
-                  {quiz.status ?? "generated"}
-                </StatusPill>
-              </td>
-
-              <td>{formatDate(quiz.created_at ?? quiz.createdAt)}</td>
-            </tr>
-          ))
-        ) : (
-          <tr>
-            <td className="empty-row" colSpan="6">
-              No recent quizzes
-            </td>
-          </tr>
-        )}
-      </tbody>
-    </table>
-  </div>
-</div>
+                        <td>{formatDate(quiz.created_at ?? quiz.createdAt)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="empty-row" colSpan="5">
+                        No recent quizzes
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           <div id="summary-table" className="admin-table-card">
-  <h3>Summary Table</h3>
+            <h3>Summary Table</h3>
 
             <div className="table-scroll">
               <table className="admin-table">
@@ -1764,7 +1761,7 @@ const handleFeatureClick = (path) => {
         </section>
 
         <section className="final-grid">
-          <div className="system-card">
+        <div id="system-health" className="system-card">
             <h3>System Health</h3>
 
             <div className="system-list">
@@ -1795,7 +1792,7 @@ const handleFeatureClick = (path) => {
             </div>
           </div>
 
-          <div className="activity-card">
+        <div id="recent-activity" className="activity-card">
             <h3>Recent Activity</h3>
 
             <div className="activity-list">
@@ -1847,7 +1844,7 @@ const handleFeatureClick = (path) => {
                     <span className="activity-icon">📝</span>
                     <div className="activity-text">
                       <strong>Generated quizzes are shown in Quiz Table</strong>
-                      <p>Difficulty, questions, and creation date</p>
+                      <p>Questions, grade, status, and creation date</p>
                     </div>
                   </div>
                 </>

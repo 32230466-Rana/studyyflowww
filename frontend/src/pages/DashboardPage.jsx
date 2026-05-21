@@ -225,7 +225,28 @@ function extractArrayFromApi(response) {
 
     return Array.isArray(data) ? data : [];
 }
+function AnnouncementBanner({ announcement }) {
+    if (!announcement) return null;
 
+    return (
+        <div className="announcement-banner">
+            <div className="announcement-bell-wrap">
+                <span className="announcement-bell">🔔</span>
+                <span className="announcement-pulse" />
+            </div>
+
+            <div className="announcement-content">
+                <div className="announcement-title">
+                    {announcement.title || "New announcement"}
+                </div>
+
+                <p className="announcement-text">
+                    {announcement.message || announcement.body || ""}
+                </p>
+            </div>
+        </div>
+    );
+}
 // ---- Main component ------------------------------------------------
 export default function DashboardPage() {
     const { user } = useAuth();
@@ -234,7 +255,7 @@ export default function DashboardPage() {
     const [summaries, setSummaries] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-
+const [latestAnnouncement, setLatestAnnouncement] = useState(null);
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [file, setFile] = useState(null);
@@ -300,7 +321,19 @@ export default function DashboardPage() {
             // silent: dashboard should still load even if recommendations fail
         }
     }, []);
+const loadLatestAnnouncement = useCallback(async () => {
+    try {
+        const res = await axiosClient.get("/announcements");
 
+        const payload = res.data?.data || res.data || [];
+        const list = Array.isArray(payload) ? payload : payload.announcements || [];
+
+        setLatestAnnouncement(list[0] || null);
+    } catch (err) {
+        console.log("Announcement load error:", err.response?.data || err.message);
+        setLatestAnnouncement(null);
+    }
+}, []);
     const loadDashboardStats = useCallback(async () => {
         try {
             const res = await axiosClient.get("/dashboard");
@@ -337,7 +370,9 @@ export default function DashboardPage() {
     useEffect(() => {
         loadDashboardStats();
     }, [loadDashboardStats]);
-
+useEffect(() => {
+    loadLatestAnnouncement();
+}, [loadLatestAnnouncement]);
     const handleDragOver = (e) => {
         e.preventDefault();
         setIsDragging(true);
@@ -465,17 +500,18 @@ export default function DashboardPage() {
 
     return (
         <div className="dashboard-page dash-fade-in">
-            <div className="page-header">
-                <h1>
-                    Good day, {firstName} <span className="wave">👋</span>
-                </h1>
-                <p className="page-header-sub">
-                    Upload study material or paste notes — your AI will handle
-                    the rest.
-                </p>
-            </div>
+          <div className="page-header">
+    <h1>
+        Good day, {firstName} <span className="wave">👋</span>
+    </h1>
+    <p className="page-header-sub">
+        Upload study material or paste notes — your AI will handle
+        the rest.
+    </p>
+</div>
 
-            {error && <div className="alert alert-error">{error}</div>}
+<AnnouncementBanner announcement={latestAnnouncement} />
+{error && <div className="alert alert-error">{error}</div>}
 
             <div className="stats-grid">
                 <StatCard

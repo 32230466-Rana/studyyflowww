@@ -125,6 +125,23 @@ class AiConversationController extends Controller
             'chat_message' => $message,
         ], 201);
     }
+    public function update(Request $request, string $uuid)
+    {
+        $conversation = $this->findUserConversation($request, $uuid);
+
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:120'],
+        ]);
+
+        $conversation->update([
+            'title' => $data['title'],
+        ]);
+
+        return response()->json([
+            'message' => 'Conversation updated successfully.',
+            'conversation' => $conversation,
+        ]);
+    }
 
     public function updateSummary(Request $request, string $uuid)
     {

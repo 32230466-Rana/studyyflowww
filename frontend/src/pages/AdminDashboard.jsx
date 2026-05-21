@@ -1,24 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import axiosClient from '../api/axiosClient.js';
 
-import { Alert, Badge, Button, Card, InputField, Loader } from '../components/ui/UIComponents.jsx';
-import { ConfirmDialog, EmptyState, Modal, StatCard } from '../components/ui/AdvancedComponents.jsx';
-
-const STATUS_OPTIONS = [
-  { value: 'active', label: 'Active' },
-  { value: 'inactive', label: 'Inactive' },
-  { value: 'suspended', label: 'Suspended' },
-];
-
-function firstError(errors, key) {
-  const value = errors?.[key];
-  if (!value) return '';
-  if (Array.isArray(value)) return value[0] || '';
-  return String(value);
+function formatNumber(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n.toLocaleString() : '0';
 }
 
 function formatDate(value) {
-  if (!value) return '';
+  if (!value) return '-';
+
   try {
     return new Date(value).toLocaleDateString();
   } catch {
@@ -26,652 +17,781 @@ function formatDate(value) {
   }
 }
 
+function getPayload(res) {
+  return res?.data?.data || res?.data || {};
+}
+
+function pillClass(type) {
+  if (type === 'success' || type === 'online' || type === 'active') {
+    return 'bg-green-100 text-green-700';
+  }
+
+  if (type === 'warning' || type === 'ready') {
+    return 'bg-yellow-100 text-yellow-700';
+  }
+
+  if (type === 'danger' || type === 'error') {
+    return 'bg-red-100 text-red-700';
+  }
+
+  if (type === 'admin' || type === 'connected' || type === 'generated') {
+    return 'bg-blue-100 text-blue-700';
+  }
+
+  return 'bg-slate-100 text-slate-700';
+}
+
+function StatCard({ icon, title, value, subtitle }) {
+  return (
+    <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+      <div className="flex items-center gap-4">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-2xl">
+          {icon}
+        </div>
+
+        <div>
+          <div className="text-3xl font-black text-slate-950">{formatNumber(value)}</div>
+          <div className="text-sm font-bold text-slate-600">{title}</div>
+          {subtitle ? <div className="mt-1 text-xs text-slate-400">{subtitle}</div> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeatureCard({ title, icon, items, shapeClass }) {
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-blue-100 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+      <div className="relative z-10">
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-2xl font-black leading-tight text-blue-900">{title}</h3>
+
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-2xl">
+            {icon}
+          </div>
+        </div>
+
+        <div className="mt-4 h-px bg-blue-100" />
+
+        <div className="mt-4 space-y-3">
+          {(items || []).map((item, index) => {
+            const label = typeof item === 'string' ? item : item.label;
+            const onClick = typeof item === 'string' ? null : item.onClick;
+
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={onClick}
+                className="flex w-full items-start gap-3 rounded-xl px-2 py-1.5 text-left text-sm font-bold text-slate-800 transition hover:bg-blue-50 hover:text-blue-700"
+              >
+                <span
+                  className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${
+                    index === 0 ? 'bg-yellow-400' : index === 1 ? 'bg-green-500' : 'bg-blue-400'
+                  }`}
+                />
+
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className={`absolute -bottom-8 -right-8 h-32 w-32 rounded-full opacity-50 ${shapeClass}`} />
+    </div>
+  );
+}
+
+function SimpleLineChart({ values }) {
+  const data = Array.isArray(values) && values.length ? values.map((v) => Number(v || 0)) : [0];
+  const width = 520;
+  const height = 180;
+  const padding = 34;
+  const max = Math.max(...data, 1);
+  const step = data.length > 1 ? (width - padding * 2) / (data.length - 1) : 0;
+
+  const points = data.map((value, index) => {
+    const x = padding + index * step;
+    const y = height - padding - (value / max) * (height - padding * 2);
+
+    return { x, y, value };
+  });
+
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  const labelEvery = Math.max(1, Math.ceil(data.length / 8));
+
+  return (
+    <div className="w-full overflow-hidden rounded-2xl bg-white">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
+        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#e5e7eb" />
+        <line x1={padding} y1={padding} x2={width - padding} y2={padding} stroke="#f1f5f9" />
+
+        <path d={path} fill="none" stroke="#6366f1" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+
+        {points.map((p, index) => (
+          <g key={index}>
+            <circle cx={p.x} cy={p.y} r="5" fill="#6366f1" />
+
+            {index % labelEvery === 0 || index === points.length - 1 ? (
+              <text x={p.x} y={Math.max(16, p.y - 12)} textAnchor="middle" fontSize="14" fontWeight="800" fill="#020617">
+                {p.value}
+              </text>
+            ) : null}
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function SimpleBarChart({ values }) {
+  const data = Array.isArray(values) && values.length ? values.map((v) => Number(v || 0)) : [0];
+  const max = Math.max(...data, 1);
+
+  return (
+    <div className="flex h-44 items-end gap-2 rounded-2xl bg-white px-2 pb-4 pt-8">
+      {data.map((value, index) => {
+        const height = Math.max(8, (value / max) * 120);
+
+        return (
+          <div key={index} className="flex flex-1 flex-col items-center justify-end gap-2">
+            <div className="text-xs font-black text-slate-950">{value}</div>
+            <div className="w-full rounded-t-xl bg-indigo-500/80" style={{ height }} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChartCard({ title, subtitle, type = 'line', values }) {
+  return (
+    <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-sm">
+      <h3 className="text-lg font-black text-slate-950">{title}</h3>
+      <p className="mt-1 text-sm font-medium text-slate-500">{subtitle}</p>
+
+      <div className="mt-5">
+        {type === 'bar' ? <SimpleBarChart values={values} /> : <SimpleLineChart values={values} />}
+      </div>
+    </div>
+  );
+}
+
+function TableCard({ title, children }) {
+  return (
+    <div className="overflow-hidden rounded-3xl border border-blue-100 bg-white shadow-sm">
+      <div className="border-b border-blue-100 px-5 py-4">
+        <h3 className="text-2xl font-black text-blue-900">{title}</h3>
+      </div>
+
+      <div className="overflow-x-auto">{children}</div>
+    </div>
+  );
+}
+
+function EmptyRow({ colSpan, text }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="px-5 py-10 text-center text-sm font-bold text-slate-400">
+        {text}
+      </td>
+    </tr>
+  );
+}
+
 export default function AdminDashboard() {
-  const [stats, setStats] = useState(null);
+  const navigate = useNavigate();
 
-  const [users, setUsers] = useState([]);
-  const [pagination, setPagination] = useState({
-    current_page: 1,
-    per_page: 15,
-    total: 0,
-    last_page: 1,
-  });
-
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [dashboard, setDashboard] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(15);
-  const [search, setSearch] = useState('');
-  const [searchDebounced, setSearchDebounced] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all'); // all | admin | user
-  const [verifiedFilter, setVerifiedFilter] = useState('all'); // all | verified | unverified
-  const [statusFilter, setStatusFilter] = useState('all'); // all | active | inactive | suspended
-  const [sortBy, setSortBy] = useState('created_at');
-  const [sortDir, setSortDir] = useState('desc');
+  const analyticsRef = useRef(null);
+  const usersTableRef = useRef(null);
+  const notesTableRef = useRef(null);
+  const quizTableRef = useRef(null);
+  const summaryTableRef = useRef(null);
+  const systemHealthRef = useRef(null);
+  const recentActivityRef = useRef(null);
 
-  const [userModalOpen, setUserModalOpen] = useState(false);
-  const [userModalMode, setUserModalMode] = useState('create');
-  const [editingUser, setEditingUser] = useState(null);
-  const [savingUser, setSavingUser] = useState(false);
-  const [formErrors, setFormErrors] = useState({});
-  const [form, setForm] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    is_admin: false,
-    status: 'active',
-    password: '',
-    password_confirmation: '',
-  });
+  const scrollToSection = (ref) => {
+    ref.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  };
 
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [deletingUser, setDeletingUser] = useState(null);
-  const [deleting, setDeleting] = useState(false);
+  const showNotice = (message, ref = null) => {
+    setNotice(message);
 
-  useEffect(() => {
-    const id = setTimeout(() => setSearchDebounced(search.trim()), 350);
-    return () => clearTimeout(id);
-  }, [search]);
+    if (ref) {
+      setTimeout(() => scrollToSection(ref), 80);
+    }
 
-  const loadStats = useCallback(async () => {
-    setLoadingStats(true);
+    setTimeout(() => {
+      setNotice('');
+    }, 3500);
+  };
+
+  const loadDashboard = useCallback(async () => {
+    setError('');
+
     try {
-      const res = await axiosClient.get('/admin/stats');
-      setStats(res?.data?.data || null);
+      const res = await axiosClient.get('/admin/dashboard', {
+        params: { days: 14 },
+      });
+
+      setDashboard(getPayload(res));
     } catch (e) {
-      setError(e?.response?.data?.message || 'Failed to load admin stats.');
-    } finally {
-      setLoadingStats(false);
+      setError(e?.response?.data?.message || 'Failed to load admin dashboard.');
     }
   }, []);
 
-  const buildUsersParams = useCallback(
-    (pageValue) => {
-      const params = {
-        page: pageValue,
-        per_page: perPage,
-        sort_by: sortBy,
-        sort_dir: sortDir,
-      };
-
-      if (searchDebounced) params.search = searchDebounced;
-      if (roleFilter !== 'all') params.is_admin = roleFilter === 'admin';
-      if (verifiedFilter !== 'all') params.verified = verifiedFilter === 'verified';
-      if (statusFilter !== 'all') params.status = statusFilter;
-
-      return params;
-    },
-    [perPage, roleFilter, verifiedFilter, statusFilter, sortBy, sortDir, searchDebounced]
-  );
-
-  const loadUsers = useCallback(
-    async (pageValue = page) => {
-      setLoadingUsers(true);
-      try {
-        const res = await axiosClient.get('/admin/users', {
-          params: buildUsersParams(pageValue),
-        });
-
-        const payload = res?.data?.data;
-        const rawUsers = payload?.users;
-        const list = Array.isArray(rawUsers) ? rawUsers : rawUsers?.data || [];
-        const meta = payload?.pagination || null;
-
-        setUsers(list);
-        if (meta) {
-          setPagination(meta);
-          setPage(meta.current_page || pageValue);
-        } else {
-          setPagination((prev) => ({ ...prev, current_page: pageValue }));
-          setPage(pageValue);
-        }
-      } catch (e) {
-        setError(e?.response?.data?.message || 'Failed to load users.');
-      } finally {
-        setLoadingUsers(false);
-      }
-    },
-    [buildUsersParams, page]
-  );
-
   useEffect(() => {
-    setError('');
-    void loadStats();
-  }, [loadStats]);
+    setLoading(true);
 
-  useEffect(() => {
-    setError('');
-    setPage(1);
-    void loadUsers(1);
-  }, [perPage, roleFilter, verifiedFilter, statusFilter, sortBy, sortDir, searchDebounced, loadUsers]);
-
-  const statCards = useMemo(() => {
-    const totalUsers = stats?.total_users ?? 0;
-    const verifiedUsers = stats?.verified_users ?? 0;
-    const unverifiedUsers = stats?.unverified_users ?? Math.max(0, totalUsers - verifiedUsers);
-
-    return [
-      {
-        title: 'Total Users',
-        value: totalUsers,
-        icon: '👥',
-        color: 'blue',
-        trend: `${pagination?.total ?? totalUsers} in system`,
-      },
-      {
-        title: 'Active Users',
-        value: stats?.active_users ?? 0,
-        icon: '⚡',
-        color: 'green',
-        trend: 'Status: active',
-      },
-      {
-        title: 'Verified',
-        value: verifiedUsers,
-        icon: '✅',
-        color: 'purple',
-        trend: `${unverifiedUsers} pending`,
-      },
-      {
-        title: 'Admins',
-        value: stats?.admin_users ?? 0,
-        icon: '🛡️',
-        color: 'orange',
-        trend: 'Role-based access',
-      },
-    ];
-  }, [pagination?.total, stats]);
-
-  const badgeForStatus = (value) => {
-    if (value === 'active') return 'success';
-    if (value === 'suspended') return 'danger';
-    return 'warning';
-  };
-
-  const openCreateUser = () => {
-    setError('');
-    setFormErrors({});
-    setUserModalMode('create');
-    setEditingUser(null);
-    setForm({
-      name: '',
-      email: '',
-      phone: '',
-      is_admin: false,
-      status: 'active',
-      password: '',
-      password_confirmation: '',
+    loadDashboard().finally(() => {
+      setLoading(false);
     });
-    setUserModalOpen(true);
-  };
-
-  const openEditUser = (user) => {
-    setError('');
-    setFormErrors({});
-    setUserModalMode('edit');
-    setEditingUser(user);
-    setForm({
-      name: user?.name || '',
-      email: user?.email || '',
-      phone: user?.phone || '',
-      is_admin: !!user?.is_admin,
-      status: user?.status || 'active',
-      password: '',
-      password_confirmation: '',
-    });
-    setUserModalOpen(true);
-  };
-
-  const closeUserModal = () => {
-    if (savingUser) return;
-    setUserModalOpen(false);
-    setEditingUser(null);
-    setFormErrors({});
-  };
-
-  const submitUser = async (e) => {
-    e?.preventDefault?.();
-    setSavingUser(true);
-    setError('');
-    setFormErrors({});
-
-    try {
-      if (userModalMode === 'create') {
-        await axiosClient.post('/admin/users', {
-          name: form.name,
-          email: form.email,
-          phone: form.phone || null,
-          is_admin: !!form.is_admin,
-          status: form.status,
-          password: form.password,
-          password_confirmation: form.password_confirmation,
-        });
-      } else if (editingUser?.id) {
-        const payload = {
-          name: form.name,
-          email: form.email,
-          phone: form.phone || null,
-          is_admin: !!form.is_admin,
-          status: form.status,
-        };
-
-        if (form.password) {
-          payload.password = form.password;
-          payload.password_confirmation = form.password_confirmation;
-        }
-
-        await axiosClient.put(`/admin/users/${editingUser.id}`, payload);
-      }
-
-      setUserModalOpen(false);
-      setEditingUser(null);
-      await Promise.all([loadStats(), loadUsers(page)]);
-    } catch (e2) {
-      const resp = e2?.response?.data;
-      if (resp?.errors && typeof resp.errors === 'object') {
-        setFormErrors(resp.errors);
-      }
-      setError(resp?.message || 'Failed to save user.');
-    } finally {
-      setSavingUser(false);
-    }
-  };
-
-  const requestDeleteUser = (user) => {
-    setError('');
-    setDeletingUser(user);
-    setConfirmDeleteOpen(true);
-  };
-
-  const confirmDeleteUser = async () => {
-    if (deleting) return;
-    if (!deletingUser?.id) return;
-    setDeleting(true);
-    setError('');
-    try {
-      await axiosClient.delete(`/admin/users/${deletingUser.id}`);
-      setConfirmDeleteOpen(false);
-      setDeletingUser(null);
-      await Promise.all([loadStats(), loadUsers(Math.max(1, page))]);
-    } catch (e) {
-      setError(e?.response?.data?.message || 'Delete failed.');
-    } finally {
-      setDeleting(false);
-    }
-  };
+  }, [loadDashboard]);
 
   const refresh = async () => {
-    setError('');
-    await Promise.all([loadStats(), loadUsers(page)]);
+    setRefreshing(true);
+    await loadDashboard();
+    setRefreshing(false);
   };
 
-  return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="space-y-8">
-        <div className="rounded-3xl border border-white/10 bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-sm font-semibold uppercase tracking-widest text-slate-400">Admin</div>
-              <h1 className="mt-2 text-4xl font-bold text-white">Admin Dashboard</h1>
-              <p className="mt-2 max-w-2xl text-slate-300">
-                Manage users, roles, and statuses using the protected admin API.
-              </p>
-            </div>
+  const stats = dashboard?.stats || {};
+  const charts = dashboard?.charts || {};
 
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={refresh} disabled={loadingStats || loadingUsers}>
-                ↻ Refresh
-              </Button>
-              <Button variant="primary" size="sm" onClick={openCreateUser}>
-                ＋ Add User
-              </Button>
-            </div>
+  const recentUsers = dashboard?.recent_users || [];
+  const recentNotes = dashboard?.recent_notes || [];
+  const recentQuizzes = dashboard?.recent_quizzes || [];
+  const recentSummaries = dashboard?.recent_summaries || [];
+  const recentActivity = dashboard?.recent_activity || [];
+
+  const systemHealth = useMemo(() => {
+    return (
+      dashboard?.system_health || [
+        { name: 'Laravel API', status: 'Online', type: 'online' },
+        { name: 'Admin Dashboard API', status: 'Online', type: 'online' },
+        { name: 'Summary Service', status: 'Connected', type: 'connected' },
+        { name: 'Quiz Generator', status: 'Ready', type: 'ready' },
+        { name: 'Current AI Model', status: 'Local Ollama', type: 'default' },
+      ]
+    );
+  }, [dashboard]);
+
+  const mainStats = [
+    {
+      icon: '👥',
+      title: 'Total Users',
+      value: stats.total_users,
+    },
+    {
+      icon: '📁',
+      title: 'Total Notes',
+      value: stats.total_notes,
+    },
+    {
+      icon: '🛡️',
+      title: 'Total Admins',
+      value: stats.total_admins ?? stats.admin_users,
+    },
+    {
+      icon: '⭐',
+      title: 'Featured Notes',
+      value: stats.featured_notes,
+    },
+    {
+      icon: '🤖',
+      title: 'AI Usage',
+      value: stats.ai_usage_count ?? stats.ai_usage,
+    },
+    {
+      icon: '⚡',
+      title: 'Active Users',
+      value: stats.active_users,
+    },
+    {
+      icon: '📝',
+      title: 'Quizzes Created',
+      value: stats.quizzes_created ?? stats.quiz_count,
+    },
+    {
+      icon: '📤',
+      title: 'Files Uploaded',
+      value: stats.files_uploaded,
+    },
+  ];
+
+  const featureCards = [
+    {
+      title: 'User Management',
+      icon: '👤',
+      shapeClass: 'bg-blue-200',
+      items: [
+        {
+          label: 'Add / Update / Delete Users',
+          onClick: () => navigate('/admin/users'),
+        },
+        {
+          label: 'Role Control Admin / Student',
+          onClick: () => navigate('/admin/users?section=roles'),
+        },
+        {
+          label: 'Search & Filters',
+          onClick: () => navigate('/admin/users?focus=search'),
+        },
+      ],
+    },
+    {
+      title: 'Notes Management',
+      icon: '📚',
+      shapeClass: 'bg-green-200',
+      items: [
+        {
+          label: 'View / Delete Notes',
+          onClick: () => navigate('/admin/notes'),
+        },
+        {
+          label: 'Reprocess Notes',
+          onClick: () => navigate('/admin/notes?section=reprocess'),
+        },
+        {
+          label: 'File Filters & Status',
+          onClick: () => navigate('/admin/notes?focus=filters'),
+        },
+      ],
+    },
+    {
+      title: 'AI Management',
+      icon: '🤖',
+      shapeClass: 'bg-purple-200',
+      items: [
+        {
+          label: 'Summary Stats',
+          onClick: () => showNotice('Summary statistics are shown in the Summary Table.', summaryTableRef),
+        },
+        {
+          label: 'Quiz Stats',
+          onClick: () => showNotice('Quiz statistics are shown in the Quiz Table.', quizTableRef),
+        },
+        {
+          label: 'AI Usage Reports',
+          onClick: () => showNotice('AI usage reports are shown in the Analytics Dashboard.', analyticsRef),
+        },
+      ],
+  
+ {
+  title: "Quiz Management",
+  icon: "✅",
+  variant: "orange",
+  path: "/admin/quiz-management",
+  points: [
+    "View / Edit Quizzes",
+    "Regenerate Quizzes",
+  ],
+},
+  ];
+
+  const secondaryFeatureCards = [
+    {
+      title: 'Announcements',
+      icon: '📣',
+      shapeClass: 'bg-orange-200',
+      items: [
+        {
+          label: 'Post Updates',
+          onClick: () => showNotice('Latest platform updates are shown in Recent Activity.', recentActivityRef),
+        },
+        {
+          label: 'Manage Alerts',
+          onClick: () => showNotice('Admin alerts are tracked in Recent Activity.', recentActivityRef),
+        },
+      ],
+    },
+    {
+      title: 'Featured Materials',
+      icon: '⭐',
+      shapeClass: 'bg-green-200',
+      items: [
+        {
+          label: 'Highlight Notes',
+          onClick: () => navigate('/admin/notes?focus=featured'),
+        },
+        {
+          label: 'Promote Content',
+          onClick: () => navigate('/admin/notes?section=featured'),
+        },
+      ],
+    },
+    {
+      title: 'Reports & Feedback',
+      icon: '⚠️',
+      shapeClass: 'bg-blue-200',
+      items: [
+        {
+          label: 'Review Issues',
+          onClick: () => showNotice('Reports and issues are shown through recent admin activity.', recentActivityRef),
+        },
+        {
+          label: 'User Reports',
+          onClick: () => showNotice('User reports are connected to admin activity and feedback records.', recentActivityRef),
+        },
+      ],
+    },
+    {
+      title: 'System Settings',
+      icon: '⚙️',
+      shapeClass: 'bg-purple-200',
+      items: [
+        {
+          label: 'File Limits',
+          onClick: () => showNotice('File and service status are shown in System Health.', systemHealthRef),
+        },
+        {
+          label: 'AI Options',
+          onClick: () => showNotice('Current AI model and AI service status are shown in System Health.', systemHealthRef),
+        },
+      ],
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center">
+        <div className="rounded-3xl bg-white px-8 py-6 text-center shadow-sm">
+          <div className="text-lg font-black text-blue-900">Loading admin dashboard...</div>
+          <div className="mt-2 text-sm text-slate-500">Please wait</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1500px] space-y-7">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-sm font-bold text-slate-500">Admin Dashboard</div>
+            <h1 className="text-3xl font-black text-slate-950">Admin Dashboard</h1>
+          </div>
+
+          <div className="flex gap-3">
+            <Link
+              to="/dashboard"
+              className="rounded-2xl border border-blue-100 bg-white px-4 py-2 text-sm font-bold text-blue-900 shadow-sm transition hover:bg-blue-50"
+            >
+              ← Back to dashboard
+            </Link>
+
+            <button
+              type="button"
+              onClick={refresh}
+              disabled={refreshing}
+              className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
           </div>
         </div>
 
         {error ? (
-          <div>
-            <Alert type="error" title="Something went wrong" message={error} showIcon />
+          <div className="rounded-3xl border border-red-100 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">
+            {error}
           </div>
         ) : null}
 
-        <div>
-          <h2 className="text-2xl font-bold text-white">Overview</h2>
-          <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {loadingStats ? (
-              <Card className="bg-slate-900/80 border border-white/10 text-white">
-                <div className="flex items-center justify-center py-10">
-                  <Loader />
-                </div>
-              </Card>
-            ) : (
-              statCards.map((c) => (
-                <div key={c.title} className="transition-transform duration-300 hover:-translate-y-1">
-                  <StatCard title={c.title} value={c.value} icon={c.icon} color={c.color} trend={c.trend} />
-                </div>
-              ))
-            )}
+        {notice ? (
+          <div className="rounded-3xl border border-blue-100 bg-blue-50 px-5 py-4 text-sm font-bold text-blue-700">
+            {notice}
+          </div>
+        ) : null}
+
+        <div className="overflow-hidden rounded-[2rem] bg-gradient-to-r from-blue-700 to-sky-400 p-8 text-center shadow-sm">
+          <h2 className="text-4xl font-black tracking-tight text-white drop-shadow sm:text-5xl">
+            ADMIN DASHBOARD FEATURES
+          </h2>
+
+          <div className="mx-auto mt-5 w-fit rounded-2xl bg-blue-900/35 px-8 py-3 text-lg font-black text-white">
+            For Study Platform
           </div>
         </div>
 
-        <Card className="bg-slate-900/80 border border-white/10 text-white">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h2 className="text-2xl font-bold">Users</h2>
-              <p className="mt-1 text-sm text-slate-400">Search, filter, and manage user accounts.</p>
-            </div>
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+          {mainStats.map((card) => (
+            <StatCard key={card.title} {...card} />
+          ))}
+        </div>
 
-            <div className="grid w-full gap-3 sm:grid-cols-2 lg:max-w-3xl lg:grid-cols-4">
-              <div className="sm:col-span-2">
-                <InputField
-                  placeholder="Search name, email, or phone"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="bg-slate-950/40 border-white/10 text-white placeholder:text-slate-400 focus:border-blue-400 focus:ring-blue-500/20"
-                />
-              </div>
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+          {featureCards.map((card) => (
+            <FeatureCard key={card.title} {...card} />
+          ))}
+        </div>
 
-              <select
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-                className="w-full rounded-2xl border-2 border-white/10 bg-slate-950/40 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400"
-              >
-                <option value="all">All roles</option>
-                <option value="admin">Admins</option>
-                <option value="user">Users</option>
-              </select>
-
-              <select
-                value={verifiedFilter}
-                onChange={(e) => setVerifiedFilter(e.target.value)}
-                className="w-full rounded-2xl border-2 border-white/10 bg-slate-950/40 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400"
-              >
-                <option value="all">All verification</option>
-                <option value="verified">Verified</option>
-                <option value="unverified">Unverified</option>
-              </select>
-
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full rounded-2xl border-2 border-white/10 bg-slate-950/40 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400"
-              >
-                <option value="all">All statuses</option>
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={perPage}
-                onChange={(e) => setPerPage(Number(e.target.value) || 15)}
-                className="w-full rounded-2xl border-2 border-white/10 bg-slate-950/40 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400"
-              >
-                {[10, 15, 25, 50].map((n) => (
-                  <option key={n} value={n}>
-                    {n} / page
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={`${sortBy}:${sortDir}`}
-                onChange={(e) => {
-                  const [sb, sd] = e.target.value.split(':');
-                  setSortBy(sb);
-                  setSortDir(sd);
-                }}
-                className="w-full rounded-2xl border-2 border-white/10 bg-slate-950/40 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400"
-              >
-                <option value="created_at:desc">Newest</option>
-                <option value="created_at:asc">Oldest</option>
-                <option value="name:asc">Name A → Z</option>
-                <option value="name:desc">Name Z → A</option>
-              </select>
-            </div>
+        <section ref={analyticsRef} className="scroll-mt-6 rounded-[2rem] border border-blue-100 bg-white p-5 shadow-sm">
+          <div className="mb-5 flex items-center gap-4">
+            <div className="h-px flex-1 bg-blue-100" />
+            <h2 className="text-center text-3xl font-black text-blue-900">Analytics Dashboard</h2>
+            <div className="h-px flex-1 bg-blue-100" />
           </div>
 
-          <div className="mt-6">
-            {loadingUsers ? (
-              <div className="flex items-center justify-center py-10">
-                <Loader />
-              </div>
-            ) : users.length === 0 ? (
-              <EmptyState
-                icon="👥"
-                title="No users found"
-                description="Try adjusting your search or filters."
-                action={
-                  <Button variant="primary" size="sm" onClick={openCreateUser}>
-                    Add a user
-                  </Button>
-                }
-              />
-            ) : (
-              <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-950/30">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="bg-slate-950/40 text-slate-300">
-                      <tr>
-                        <th className="px-6 py-4 font-semibold">User</th>
-                        <th className="hidden px-6 py-4 font-semibold md:table-cell">Role</th>
-                        <th className="hidden px-6 py-4 font-semibold lg:table-cell">Status</th>
-                        <th className="hidden px-6 py-4 font-semibold lg:table-cell">Verified</th>
-                        <th className="hidden px-6 py-4 font-semibold xl:table-cell">Joined</th>
-                        <th className="px-6 py-4 text-right font-semibold">Actions</th>
+          <div className="mb-5 grid grid-cols-1 overflow-hidden rounded-3xl border border-blue-100 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard icon="👥" title="Total Users" value={stats.total_users} />
+            <StatCard icon="📁" title="Total Notes" value={stats.total_notes} />
+            <StatCard icon="🤖" title="AI Requests" value={stats.ai_usage_count ?? stats.ai_usage} />
+            <StatCard icon="📝" title="Quizzes Created" value={stats.quizzes_created ?? stats.quiz_count} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <ChartCard
+              title="Users Growth"
+              subtitle="New users created per day"
+              values={charts.users_growth || charts.user_growth}
+            />
+
+            <ChartCard
+              title="Notes Uploads"
+              subtitle="Notes created per day"
+              type="bar"
+              values={charts.notes_uploads || charts.notes_growth}
+            />
+
+            <ChartCard
+              title="AI Usage"
+              subtitle="AI requests / Ask Note usage"
+              values={charts.ai_usage}
+            />
+
+            <ChartCard
+              title="Quiz And Summary Stats"
+              subtitle="Quizzes and summaries activity"
+              type="bar"
+              values={[
+                stats.quizzes_created ?? stats.quiz_count ?? 0,
+                stats.ai_summaries ?? 0,
+                stats.ai_usage_count ?? stats.ai_usage ?? 0,
+                stats.total_notes ?? 0,
+                stats.active_users ?? 0,
+              ]}
+            />
+          </div>
+        </section>
+
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+          {secondaryFeatureCards.map((card) => (
+            <FeatureCard key={card.title} {...card} />
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <div ref={usersTableRef} className="scroll-mt-6">
+            <TableCard title="Users Table">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-slate-100 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-5 py-3">Name</th>
+                    <th className="px-5 py-3">Email</th>
+                    <th className="px-5 py-3">Role</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Created</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {recentUsers.length === 0 ? (
+                    <EmptyRow colSpan={5} text="No users found" />
+                  ) : (
+                    recentUsers.map((user) => (
+                      <tr key={user.id} className="hover:bg-slate-50">
+                        <td className="px-5 py-4 font-bold text-slate-800">{user.name || '-'}</td>
+                        <td className="px-5 py-4 font-bold text-slate-700">{user.email || '-'}</td>
+                        <td className="px-5 py-4">
+                          <span className={`rounded-full px-3 py-1 text-xs font-black ${pillClass(user.role)}`}>
+                            {user.is_admin ? 'Admin' : 'User'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className={`rounded-full px-3 py-1 text-xs font-black ${pillClass(user.status)}`}>
+                            {user.status || 'active'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 font-bold text-slate-600">{formatDate(user.created_at)}</td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {users.map((u) => (
-                        <tr key={u.id} className="hover:bg-white/5 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-4">
-                              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/30 to-purple-500/30 text-white/90">
-                                {(u?.name || 'U')?.slice(0, 1)?.toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="font-semibold text-white">
-                                  {u.name}{' '}
-                                  <span className="text-xs font-medium text-slate-400">#{u.id}</span>
-                                </div>
-                                <div className="text-slate-300">{u.email}</div>
-                                {u.phone ? <div className="text-xs text-slate-400">{u.phone}</div> : null}
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="hidden px-6 py-4 md:table-cell">
-                            <Badge variant={u.is_admin ? 'primary' : 'gray'}>{u.is_admin ? 'Admin' : 'User'}</Badge>
-                          </td>
-
-                          <td className="hidden px-6 py-4 lg:table-cell">
-                            <Badge variant={badgeForStatus(u.status)}>{u.status || 'active'}</Badge>
-                          </td>
-
-                          <td className="hidden px-6 py-4 lg:table-cell">
-                            <Badge variant={u.is_verified ? 'success' : 'warning'}>
-                              {u.is_verified ? 'Verified' : 'Pending'}
-                            </Badge>
-                          </td>
-
-                          <td className="hidden px-6 py-4 xl:table-cell text-slate-300">{formatDate(u.created_at)}</td>
-
-                          <td className="px-6 py-4">
-                            <div className="flex justify-end gap-2">
-                              <Button variant="secondary" size="sm" onClick={() => openEditUser(u)}>
-                                Edit
-                              </Button>
-                              <Button variant="danger" size="sm" onClick={() => requestDeleteUser(u)}>
-                                Delete
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="flex flex-col gap-3 border-t border-white/10 bg-slate-950/40 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="text-sm text-slate-300">
-                    Page <span className="font-semibold text-white">{pagination.current_page}</span> of{' '}
-                    <span className="font-semibold text-white">{pagination.last_page}</span> ·{' '}
-                    <span className="font-semibold text-white">{pagination.total}</span> users
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={pagination.current_page <= 1 || loadingUsers}
-                      onClick={() => loadUsers(Math.max(1, pagination.current_page - 1))}
-                    >
-                      ← Prev
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={pagination.current_page >= pagination.last_page || loadingUsers}
-                      onClick={() => loadUsers(Math.min(pagination.last_page, pagination.current_page + 1))}
-                    >
-                      Next →
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </TableCard>
           </div>
-        </Card>
+
+          <div ref={notesTableRef} className="scroll-mt-6">
+            <TableCard title="Notes Table">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-slate-100 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-5 py-3">Title</th>
+                    <th className="px-5 py-3">User</th>
+                    <th className="px-5 py-3">Source</th>
+                    <th className="px-5 py-3">Featured</th>
+                    <th className="px-5 py-3">Created</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {recentNotes.length === 0 ? (
+                    <EmptyRow colSpan={5} text="No notes found" />
+                  ) : (
+                    recentNotes.map((note) => (
+                      <tr key={note.id} className="hover:bg-slate-50">
+                        <td className="px-5 py-4 font-bold text-slate-800">{note.title || 'Untitled'}</td>
+                        <td className="px-5 py-4 font-bold text-slate-700">{note.user_name || note.user?.name || '-'}</td>
+                        <td className="px-5 py-4 font-bold text-slate-700">{note.source || note.source_type || '-'}</td>
+                        <td className="px-5 py-4">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-black ${
+                              note.is_featured ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                            }`}
+                          >
+                            {note.is_featured ? 'Yes' : 'No'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 font-bold text-slate-600">{formatDate(note.created_at)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </TableCard>
+          </div>
+
+          <div ref={quizTableRef} className="scroll-mt-6">
+            <TableCard title="Quiz Table">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-slate-100 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-5 py-3">Note</th>
+                    <th className="px-5 py-3">Questions</th>
+                    <th className="px-5 py-3">Grade</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Created</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {recentQuizzes.length === 0 ? (
+                    <EmptyRow colSpan={5} text="No recent quizzes" />
+                  ) : (
+                    recentQuizzes.map((quiz) => (
+                      <tr key={quiz.id} className="hover:bg-slate-50">
+                        <td className="px-5 py-4 font-bold text-slate-800">{quiz.note_title || 'Quiz'}</td>
+                        <td className="px-5 py-4 font-bold text-slate-700">{quiz.questions_count ?? 0}</td>
+                        <td className="px-5 py-4 font-bold text-slate-700">{quiz.grade || '-'}</td>
+                        <td className="px-5 py-4">
+                          <span className={`rounded-full px-3 py-1 text-xs font-black ${pillClass(quiz.status)}`}>
+                            {quiz.status || 'generated'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 font-bold text-slate-600">{formatDate(quiz.created_at)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </TableCard>
+          </div>
+
+          <div ref={summaryTableRef} className="scroll-mt-6">
+            <TableCard title="Summary Table">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-slate-100 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-5 py-3">Note</th>
+                    <th className="px-5 py-3">User</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Words</th>
+                    <th className="px-5 py-3">Created</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {recentSummaries.length === 0 ? (
+                    <EmptyRow colSpan={5} text="No recent summaries" />
+                  ) : (
+                    recentSummaries.map((summary) => (
+                      <tr key={summary.id} className="hover:bg-slate-50">
+                        <td className="px-5 py-4 font-bold text-slate-800">{summary.note_title || summary.title || 'Summary'}</td>
+                        <td className="px-5 py-4 font-bold text-slate-700">{summary.user_name || '-'}</td>
+                        <td className="px-5 py-4">
+                          <span className={`rounded-full px-3 py-1 text-xs font-black ${pillClass(summary.status)}`}>
+                            {summary.status || 'generated'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 font-bold text-slate-700">{summary.words_count ?? 0}</td>
+                        <td className="px-5 py-4 font-bold text-slate-600">{formatDate(summary.created_at)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </TableCard>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <div ref={systemHealthRef} className="scroll-mt-6 rounded-3xl border border-blue-100 bg-white shadow-sm">
+            <div className="border-b border-blue-100 px-5 py-4">
+              <h3 className="text-2xl font-black text-blue-900">System Health</h3>
+            </div>
+
+            <div className="space-y-3 p-5">
+              {systemHealth.map((item) => (
+                <div key={item.name} className="flex items-center justify-between rounded-2xl border border-blue-100 bg-slate-50 px-4 py-3">
+                  <span className="font-black text-slate-700">{item.name}</span>
+                  <span className={`rounded-full px-4 py-2 text-xs font-black ${pillClass(item.type)}`}>
+                    {item.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div ref={recentActivityRef} className="scroll-mt-6 rounded-3xl border border-blue-100 bg-white shadow-sm">
+            <div className="border-b border-blue-100 px-5 py-4">
+              <h3 className="text-2xl font-black text-blue-900">Recent Activity</h3>
+            </div>
+
+            <div className="space-y-3 p-5">
+              {recentActivity.length === 0 ? (
+                <div className="rounded-2xl border border-blue-100 bg-slate-50 px-4 py-6 text-center text-sm font-bold text-slate-400">
+                  No recent activity
+                </div>
+              ) : (
+                recentActivity.map((activity, index) => (
+                  <div
+                    key={`${activity.title}-${index}`}
+                    className="flex items-center gap-4 rounded-2xl border border-blue-100 bg-slate-50 px-4 py-3"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-xl">
+                      {activity.icon || '📌'}
+                    </div>
+
+                    <div>
+                      <div className="font-black text-slate-800">{activity.title}</div>
+                      <div className="text-sm font-bold text-slate-400">{formatDate(activity.created_at)}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-
-      <Modal isOpen={userModalOpen} onClose={closeUserModal} title={userModalMode === 'create' ? 'Add User' : 'Edit User'} size="lg">
-        <form onSubmit={submitUser} className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-gray-700">Name</label>
-              <InputField
-                value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                error={firstError(formErrors, 'name')}
-                placeholder="Full name"
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-gray-700">Email</label>
-              <InputField
-                value={form.email}
-                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                error={firstError(formErrors, 'email')}
-                placeholder="user@example.com"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-gray-700">Phone (optional)</label>
-              <InputField
-                value={form.phone}
-                onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                error={firstError(formErrors, 'phone')}
-                placeholder="+20..."
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-gray-700">Status</label>
-              <select
-                value={form.status}
-                onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
-                className="w-full rounded-2xl border-2 border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-              {firstError(formErrors, 'status') ? <p className="mt-2 text-sm text-red-500">{firstError(formErrors, 'status')}</p> : null}
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-gray-700">Role</label>
-              <select
-                value={form.is_admin ? 'admin' : 'user'}
-                onChange={(e) => setForm((p) => ({ ...p, is_admin: e.target.value === 'admin' }))}
-                className="w-full rounded-2xl border-2 border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-              >
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-              </select>
-              {firstError(formErrors, 'is_admin') ? <p className="mt-2 text-sm text-red-500">{firstError(formErrors, 'is_admin')}</p> : null}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-gray-100 bg-gray-50 p-5">
-            <div>
-              <h3 className="text-base font-bold text-gray-800">Password</h3>
-              <p className="text-sm text-gray-600">
-                {userModalMode === 'create' ? 'Required for new users.' : 'Leave blank to keep the current password.'}
-              </p>
-            </div>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div>
-                <InputField
-                  type="password"
-                  value={form.password}
-                  onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                  error={firstError(formErrors, 'password')}
-                  placeholder="New password"
-                />
-              </div>
-              <div>
-                <InputField
-                  type="password"
-                  value={form.password_confirmation}
-                  onChange={(e) => setForm((p) => ({ ...p, password_confirmation: e.target.value }))}
-                  error={firstError(formErrors, 'password_confirmation')}
-                  placeholder="Confirm password"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <Button variant="ghost" type="button" onClick={closeUserModal} disabled={savingUser}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              type="submit"
-              loading={savingUser}
-              disabled={userModalMode === 'create' && (!form.password || !form.password_confirmation)}
-            >
-              {userModalMode === 'create' ? 'Create user' : 'Save changes'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      <ConfirmDialog
-        isOpen={confirmDeleteOpen}
-        title="Delete user"
-        message={
-          deletingUser
-            ? `This will permanently delete ${deletingUser.email}. This action cannot be undone.`
-            : 'This will permanently delete the selected user.'
-        }
-        onCancel={() => (deleting ? null : setConfirmDeleteOpen(false))}
-        onConfirm={confirmDeleteUser}
-        confirmText={deleting ? 'Deleting…' : 'Delete'}
-        cancelText="Cancel"
-        danger
-      />
     </div>
   );
 }

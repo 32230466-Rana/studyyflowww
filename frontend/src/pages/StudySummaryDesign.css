@@ -1,0 +1,295 @@
+.study-summary-page {
+  width: 100%;
+  min-height: 100vh;
+  background: #f6f1ff;
+  padding: 35px 18px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  font-family: "Poppins", Arial, sans-serif;
+}
+
+.study-summary-paper {
+  width: 100%;
+  max-width: 1180px;
+  background: #fffdfb;
+  border: 3px solid #7b61ff;
+  border-radius: 26px;
+  padding: 28px;
+  position: relative;
+  box-shadow: 0 18px 45px rgba(87, 65, 160, 0.16);
+  overflow: hidden;
+}
+
+.summary-top-decor {
+  position: absolute;
+  top: 18px;
+  left: 32px;
+  color: #6d55df;
+  font-size: 27px;
+  display: flex;
+  gap: 15px;
+}
+
+.summary-main-title {
+  text-align: center;
+  color: #27215f;
+  font-size: 46px;
+  letter-spacing: 5px;
+  margin: 5px 0 4px;
+  font-weight: 900;
+}
+
+.summary-subtitle {
+  text-align: center;
+  color: #8b7ab8;
+  font-size: 14px;
+  margin-bottom: 28px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.95fr 1.2fr;
+  gap: 22px;
+}
+
+.summary-box {
+  background: #ffffff;
+  border: 2px solid #d8cfff;
+  border-radius: 22px;
+  padding: 46px 22px 22px;
+  min-height: 190px;
+  position: relative;
+  color: #2f2a55;
+  line-height: 1.8;
+  box-shadow: 0 8px 18px rgba(95, 78, 170, 0.08);
+}
+
+.summary-box p {
+  margin: 0;
+  font-size: 15px;
+}
+
+.summary-box ul,
+.summary-box ol {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 14.5px;
+}
+
+.summary-box li {
+  margin-bottom: 8px;
+}
+
+.summary-box.wide {
+  grid-column: span 2;
+  min-height: 150px;
+}
+
+.summary-box.big {
+  min-height: 360px;
+}
+
+.box-ribbon {
+  position: absolute;
+  top: -18px;
+  left: 22px;
+  min-width: 170px;
+  text-align: center;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #28235c;
+  border: 2px solid currentColor;
+  background: #eee8ff;
+}
+
+.purple {
+  border-color: #a48cff;
+}
+
+.purple .box-ribbon {
+  background: #eee8ff;
+  color: #6d55df;
+}
+
+.pink {
+  border-color: #ff9ec4;
+}
+
+.pink .box-ribbon {
+  background: #ffe6f0;
+  color: #db4d86;
+}
+
+.yellow {
+  border-color: #ffc94d;
+}
+
+.yellow .box-ribbon {
+  background: #fff3c6;
+  color: #d09200;
+}
+
+.blue {
+  border-color: #75b7ff;
+}
+
+.blue .box-ribbon {
+  background: #e8f4ff;
+  color: #2478c7;
+}
+
+.green {
+  border-color: #90ca7a;
+}
+
+.green .box-ribbon {
+  background: #eaf8e4;
+  color: #4f8d39;
+}
+
+.dashed {
+  border-style: dashed;
+}
+
+.cloud-box {
+  border-radius: 42px;
+  text-align: center;
+}
+
+.quote-box {
+  grid-column: 1 / -1;
+  min-height: 125px;
+  border-color: #75b7ff;
+}
+
+.quote-box .box-ribbon {
+  background: #e8f4ff;
+  color: #2478c7;
+}
+
+.box-doodle {
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+  font-size: 28px;
+  opacity: 0.75;
+}
+
+.heart-line {
+  display: block;
+  text-align: center;
+  color: #ff6ea8;
+  font-size: 42px;
+  margin-top: 10px;
+}
+
+.heart-bottom {
+  display: block;
+  color: #7b61ff;
+  font-size: 34px;
+  margin-top: 12px;
+}
+
+/* dotted notebook lines */
+.summary-box::after {
+  content: "";
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 78px;
+  bottom: 22px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 30px,
+    rgba(123, 97, 255, 0.22) 31px,
+    transparent 32px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.summary-box > * {
+  position: relative;
+  z-index: 1;
+}
+
+.quote-box::after {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 34px,
+    rgba(42, 125, 205, 0.22) 35px,
+    transparent 36px
+  );
+}
+
+/* responsive */
+@media (max-width: 992px) {
+  .summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .summary-box.big,
+  .summary-box.wide,
+  .quote-box {
+    grid-column: span 2;
+  }
+
+  .summary-main-title {
+    font-size: 36px;
+  }
+}
+
+@media (max-width: 650px) {
+  .study-summary-page {
+    padding: 18px 10px;
+  }
+
+  .study-summary-paper {
+    padding: 22px 14px;
+    border-radius: 20px;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+    gap: 26px;
+  }
+
+  .summary-box,
+  .summary-box.big,
+  .summary-box.wide,
+  .quote-box {
+    grid-column: span 1;
+  }
+
+  .summary-main-title {
+    font-size: 28px;
+    letter-spacing: 2px;
+    margin-top: 22px;
+  }
+
+  .summary-subtitle {
+    font-size: 13px;
+  }
+
+  .summary-top-decor {
+    font-size: 20px;
+    top: 12px;
+    left: 18px;
+  }
+
+  .box-ribbon {
+    min-width: 140px;
+    font-size: 14px;
+    padding: 7px 12px;
+  }
+
+  .summary-box {
+    padding: 42px 16px 18px;
+  }
+}

@@ -652,6 +652,169 @@ function pickReviewSource(item, chapterTitle, noteTitle) {
   return "Related uploaded material";
 }
 
+/* Weak-area alignment guard.
+   This prevents a weak topic from being displayed if its source/reason does not
+   contain matching evidence from the same question/source metadata.
+*/
+const RECOMMENDATION_STOPWORDS = new Set([
+  "what",
+  "which",
+  "when",
+  "where",
+  "why",
+  "how",
+  "the",
+  "is",
+  "are",
+  "was",
+  "were",
+  "a",
+  "an",
+  "of",
+  "to",
+  "in",
+  "on",
+  "for",
+  "and",
+  "or",
+  "with",
+  "about",
+  "between",
+  "from",
+  "into",
+  "by",
+  "as",
+  "at",
+  "this",
+  "that",
+  "these",
+  "those",
+  "topic",
+  "question",
+  "answer",
+  "correct",
+  "wrong",
+  "student",
+]);
+
+function normalizeRecommendationText(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function recommendationTerms(value = "") {
+  const text = normalizeRecommendationText(value);
+  const words = text.match(/[a-zA-Z][a-zA-Z-]{2,}/g) || [];
+
+  return [...new Set(words.filter((word) => !RECOMMENDATION_STOPWORDS.has(word)))];
+}
+
+function recommendationOverlap(query = "", evidence = "") {
+  const queryTerms = recommendationTerms(query);
+  const evidenceTerms = new Set(recommendationTerms(evidence));
+
+  if (!queryTerms.length) return 0;
+
+  const matched = queryTerms.filter((term) => evidenceTerms.has(term));
+
+  return matched.length / queryTerms.length;
+}
+
+function splitComparisonWeakTopic(topic = "") {
+  const text = normalizeRecommendationText(topic);
+
+  if (text.includes(" vs ")) {
+    return text.split(/\s+vs\.?\s+/).map((part) => part.trim()).filter(Boolean);
+  }
+
+  if (text.includes(" versus ")) {
+    return text.split(/\s+versus\s+/).map((part) => part.trim()).filter(Boolean);
+  }
+
+  const match = text.match(/difference between (.+?) and (.+)/);
+
+  if (match) {
+    return [match[1].trim(), match[2].trim()];
+  }
+
+  return [];
+}
+
+function buildWeakTopicEvidenceText(item, reviewSource, focusedSourceItems = []) {
+  const questionEvidenceText = focusedSourceItems
+    .map((question) => {
+      const raw = question.rawQuestion || {};
+
+      return [
+        question.question,
+        question.correctAnswer,
+        question.userAnswer,
+        question.topic,
+        question.reviewMeta?.reviewSource,
+        question.reviewMeta?.section,
+        question.reviewMeta?.chapter,
+        question.sourceMeta?.chapterTitle,
+        question.sourceMeta?.noteTitle,
+
+        raw.explanation,
+        raw.supporting_fact,
+        raw.supportingFact,
+        raw.source_text,
+        raw.sourceText,
+        raw.context,
+        raw.section,
+        raw.source_section,
+        raw.sourceSection,
+        raw.topic,
+        raw.source_topic,
+        raw.sourceTopic,
+        raw.category,
+        raw.concept,
+      ]
+        .filter(Boolean)
+        .join(" ");
+    })
+    .join(" ");
+
+  return [
+    reviewSource,
+    item.topic,
+    item.reviewSources?.join(" "),
+    item.noteTitles?.join(" "),
+    item.chapterTitles?.join(" "),
+    questionEvidenceText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function isWeakTopicSourceAligned(topic, evidenceText) {
+  const cleanTopic = normalizeRecommendationText(topic);
+  const cleanEvidence = normalizeRecommendationText(evidenceText);
+
+  if (!cleanTopic || !cleanEvidence) return false;
+
+  const comparisonParts = splitComparisonWeakTopic(cleanTopic);
+
+  if (comparisonParts.length >= 2) {
+    return comparisonParts.every((part) => recommendationOverlap(part, cleanEvidence) >= 0.5);
+  }
+
+  return recommendationOverlap(cleanTopic, cleanEvidence) >= 0.25;
+}
+
+function buildSafeWeakReason(topicItem, reviewSource) {
+  const wrongCount = topicItem.total - topicItem.correct;
+
+  if (wrongCount <= 0) {
+    return `Review "${topicItem.topic}" from ${reviewSource} to keep this area fresh.`;
+  }
+
+  return `You missed ${wrongCount}/${topicItem.total} question(s), so review "${topicItem.topic}" from ${reviewSource}.`;
+}
+
 export function buildRecommendationFromQuiz({
   questions = [],
   userAnswers = {},
@@ -743,112 +906,132 @@ export function buildRecommendationFromQuiz({
     }
   });
 
- 
-let weakTopics = Object.values(topicMap)
-  .map((item) => {
-    const score = Math.round((item.correct / item.total) * 100);
-    const wrongCount = item.total - item.correct;
-    const priority = getPriority(score, wrongCount);
+  let weakTopics = Object.values(topicMap)
+    .map((item) => {
+      const score = Math.round((item.correct / item.total) * 100);
+      const wrongCount = item.total - item.correct;
+      const priority = getPriority(score, wrongCount);
 
-    const selectedNoteId = firstValue(item.noteIds) || noteId;
-    const selectedNoteTitle = firstValue(item.noteTitles) || noteTitle;
-    const selectedChapterId = firstValue(item.chapterIds) || chapterId;
-    const selectedChapterTitle = firstValue(item.chapterTitles) || chapterTitle;
+      const selectedNoteId = firstValue(item.noteIds) || noteId;
+      const selectedNoteTitle = firstValue(item.noteTitles) || noteTitle;
+      const selectedChapterId = firstValue(item.chapterIds) || chapterId;
+      const selectedChapterTitle = firstValue(item.chapterTitles) || chapterTitle;
 
-    const baseReviewSource = pickReviewSource(
-      item,
-      selectedChapterTitle,
-      selectedNoteTitle
-    );
+      const baseReviewSource = pickReviewSource(
+        item,
+        selectedChapterTitle,
+        selectedNoteTitle
+      );
 
-    const focusedSourceItems = item.wrongQuestions.length
-      ? item.wrongQuestions
-      : item.questions;
+      const focusedSourceItems = item.wrongQuestions.length
+        ? item.wrongQuestions
+        : item.questions;
 
-    const focusedSourceChunkIds = uniqueValues([
-      ...item.sourceChunkIds,
-      ...focusedSourceItems.flatMap(
-        (question) => question.sourceMeta?.sourceChunkIds || []
-      ),
-    ]);
+      const focusedSourceChunkIds = uniqueValues([
+        ...item.sourceChunkIds,
+        ...focusedSourceItems.flatMap(
+          (question) => question.sourceMeta?.sourceChunkIds || []
+        ),
+      ]);
 
-    const pageNumbers = item.wrongQuestions
-      .map((question) => question.reviewMeta)
-      .filter(Boolean)
-      .flatMap((meta) => [meta.pageFrom, meta.pageTo])
-      .filter(Boolean)
-      .map(Number)
-      .filter((page) => !Number.isNaN(page));
+      const pageNumbers = item.wrongQuestions
+        .map((question) => question.reviewMeta)
+        .filter(Boolean)
+        .flatMap((meta) => [meta.pageFrom, meta.pageTo])
+        .filter(Boolean)
+        .map(Number)
+        .filter((page) => !Number.isNaN(page));
 
-    const pageFrom = pageNumbers.length ? Math.min(...pageNumbers) : "";
-    const pageTo = pageNumbers.length ? Math.max(...pageNumbers) : "";
+      const pageFrom = pageNumbers.length ? Math.min(...pageNumbers) : "";
+      const pageTo = pageNumbers.length ? Math.max(...pageNumbers) : "";
 
-    const reviewSource =
-      pageFrom && pageTo
-        ? pageFrom === pageTo
-          ? `Page ${pageFrom}`
-          : `Pages ${pageFrom}-${pageTo}`
-        : baseReviewSource;
+      const reviewSource =
+        pageFrom && pageTo
+          ? pageFrom === pageTo
+            ? `Page ${pageFrom}`
+            : `Pages ${pageFrom}-${pageTo}`
+          : baseReviewSource;
 
-    const recommendedQuizType = getRecommendedQuizType(quizType, priority);
+      const evidenceText = buildWeakTopicEvidenceText(
+        item,
+        reviewSource,
+        focusedSourceItems
+      );
 
-    const askPdfPrompt =
-      pageFrom && pageTo
-        ? `Explain ${item.topic} using only ${reviewSource} from this uploaded note.`
-        : `Explain ${item.topic} from this uploaded note. If possible, mention where this topic appears.`;
+      if (!isWeakTopicSourceAligned(item.topic, evidenceText)) {
+        return null;
+      }
 
-    const recommendedSteps =
-      pageFrom && pageTo
-        ? [
-            `Review ${reviewSource}`,
-            `Focus on weak topic: ${item.topic}`,
-            `Generate 5 ${recommendedQuizType} questions only from ${reviewSource}`,
-            "Retry after reviewing your wrong answers",
-          ]
-        : [
-            `Review topic: ${item.topic}`,
-            "Source pages were not returned by the backend",
-            "Ask PDF where this topic appears in the uploaded note",
-            "Generate a focused quiz from this note",
-          ];
+      const safeReason = buildSafeWeakReason(item, reviewSource);
+      const recommendedQuizType = getRecommendedQuizType(quizType, priority);
 
-    return {
-      topic: item.topic,
-      score,
-      total: item.total,
-      correct: item.correct,
-      wrongCount,
-      priority,
+      const askPdfPrompt =
+        pageFrom && pageTo
+          ? `Explain ${item.topic} using only ${reviewSource} from this uploaded note.`
+          : `Explain ${item.topic} from this uploaded note. If possible, mention where this topic appears.`;
 
-      noteId: selectedNoteId,
-      noteTitle: selectedNoteTitle,
-      chapterId: selectedChapterId,
-      chapterTitle: selectedChapterTitle,
+      const recommendedSteps =
+        pageFrom && pageTo
+          ? [
+              `Review ${reviewSource}`,
+              `Focus on weak topic: ${item.topic}`,
+              `Generate 5 ${recommendedQuizType} questions only from ${reviewSource}`,
+              "Retry after reviewing your wrong answers",
+            ]
+          : [
+              `Review topic: ${item.topic}`,
+              "Source pages were not returned by the backend",
+              "Ask PDF where this topic appears in the uploaded note",
+              "Generate a focused quiz from this note",
+            ];
 
-      pageFrom,
-      pageTo,
-      hasExactPages: Boolean(pageFrom && pageTo),
+      return {
+        topic: item.topic,
+        score,
+        total: item.total,
+        correct: item.correct,
+        wrongCount,
+        priority,
+        reason: safeReason,
 
-      reviewSource,
-      sourceChunkIds: focusedSourceChunkIds,
+        noteId: selectedNoteId,
+        noteTitle: selectedNoteTitle,
+        chapterId: selectedChapterId,
+        chapterTitle: selectedChapterTitle,
 
-      wrongQuestions: item.wrongQuestions.map(buildWrongQuestionPayload),
+        pageFrom,
+        pageTo,
+        hasExactPages: Boolean(pageFrom && pageTo),
 
-      reason: buildReason(item),
-      recommendation: buildRecommendationText(priority, item.topic),
-      recommendedQuizType,
-      askPdfPrompt,
-      recommendedSteps,
-    };
-  })
-  .filter((item) => item.score < 80 || item.wrongCount > 0)
-  .sort((a, b) => {
-    if (a.priority === "High" && b.priority !== "High") return -1;
-    if (a.priority !== "High" && b.priority === "High") return 1;
-    return a.score - b.score;
-  })
-  .slice(0, 4);
-  if (!weakTopics.length && totalQuestions > 0) {
+        reviewSource,
+        sourceChunkIds: focusedSourceChunkIds,
+
+        wrongQuestions: item.wrongQuestions.map(buildWrongQuestionPayload),
+
+        recommendation: buildRecommendationText(priority, item.topic),
+        recommendedQuizType,
+        askPdfPrompt,
+        recommendedSteps,
+      };
+    })
+    .filter(Boolean)
+    .filter((item) => item.score < 80 || item.wrongCount > 0)
+    .sort((a, b) => {
+      if (a.priority === "High" && b.priority !== "High") return -1;
+      if (a.priority !== "High" && b.priority === "High") return 1;
+      if (a.priority === "Medium" && b.priority === "Low") return -1;
+      if (a.priority === "Low" && b.priority === "Medium") return 1;
+      return b.wrongCount - a.wrongCount;
+    })
+    .slice(0, 4);
+
+  /*
+    Important:
+    Only show fallback when all answers are correct.
+    If weak topics were rejected because of source/topic mismatch,
+    do NOT create a fake fallback weak area.
+  */
+  if (!weakTopics.length && totalQuestions > 0 && correctCount === totalQuestions) {
     const bestTopic =
       evaluatedQuestions.find((item) => !isGenericTopic(item.topic))?.topic ||
       (!isGenericTopic(fallbackTopic) ? fallbackTopic : "Latest Quiz Topic");
@@ -880,7 +1063,7 @@ let weakTopics = Object.values(topicMap)
         wrongQuestions: [],
 
         reason:
-          "You answered most questions correctly. Do a quick revision to keep the information fresh.",
+          "You answered all questions correctly. Do a quick revision to keep the information fresh.",
         recommendation: "Do one short review and generate another quick quiz later.",
         recommendedQuizType: "MCQ",
         askPdfPrompt,
@@ -906,10 +1089,10 @@ let weakTopics = Object.values(topicMap)
         "Retry the quiz after reviewing",
       ]
     : [
-        "Review your correct answers",
-        "Practice one short quiz",
-        "Revise the main summary",
-        "Keep your score consistent",
+        "Review your wrong answers manually",
+        "Ask PDF about the quiz questions you missed",
+        "Generate a new focused quiz from the same note",
+        "Retry after reviewing",
       ];
 
   return {

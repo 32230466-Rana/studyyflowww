@@ -1,0 +1,9 @@
+ion 3) and [Source: W11L1-DFD.pdf], "Event: A natural starting point of a data flow." (Section 17)
+
+**Q3 (Hard)**
+What is an event DFD?
+
+A. A diagram that partitions the system into subsystems.
+B. A diagram that defines events for which the system must have a response.
+C. A diagram that merges event DFDs into a system diagram.
+D. A diagram that indicates data from multiple sources coming together 
