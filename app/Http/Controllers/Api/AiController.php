@@ -331,7 +331,7 @@ class AiController extends Controller
             $raw = $this->ollamaGenerate($prompt, [
                 'temperature' => 0.3,
                 'num_predict' => 1400,
-            ], $this->ollamaTimeout(), $this->ollamaQuizModel());
+            ], $this->ollamaTimeout());
 
             $decoded = $this->decodeFirstJsonObject($raw);
             $normalized = $this->normalizeQuizResult($decoded, $topicFallback, $difficulty, $count);
@@ -341,7 +341,7 @@ class AiController extends Controller
                 $raw2 = $this->ollamaGenerate($prompt2, [
                     'temperature' => 0,
                     'num_predict' => 1600,
-                ], $this->ollamaTimeout(), $this->ollamaQuizModel());
+                ], $this->ollamaTimeout());
 
                 $decoded2 = $this->decodeFirstJsonObject($raw2);
                 $normalized = $this->normalizeQuizResult($decoded2, $topicFallback, $difficulty, $count);
@@ -654,11 +654,6 @@ class AiController extends Controller
         return (string) config('services.ollama.model', 'llama3.2:3b');
     }
 
-    private function ollamaQuizModel(): string
-    {
-        return (string) config('services.ollama.quiz_model', $this->ollamaModel());
-    }
-
     private function ollamaTimeout(): int
     {
         return (int) config('services.ollama.timeout', 120);
@@ -692,16 +687,11 @@ class AiController extends Controller
         return $this->cleanText($text, $maxChars);
     }
 
-    private function ollamaGenerate(string $prompt, array $options = [], ?int $timeoutSeconds = null, ?string $model = null): string
+    private function ollamaGenerate(string $prompt, array $options = [], ?int $timeoutSeconds = null): string
     {
         $timeout = (int) ($timeoutSeconds ?? $this->ollamaTimeout());
         $timeout = max(5, min($timeout, 300));
         $connectTimeout = max(1, min($this->ollamaConnectTimeout(), 30));
-        $targetModel = trim((string) ($model ?? $this->ollamaModel()));
-
-        if ($targetModel === '') {
-            $targetModel = $this->ollamaModel();
-        }
 
         if (function_exists('set_time_limit')) {
             set_time_limit(600);
@@ -711,7 +701,7 @@ class AiController extends Controller
         $response = Http::connectTimeout($connectTimeout)
             ->timeout($timeout)
             ->post($this->ollamaGenerateUrl(), [
-                'model' => $targetModel,
+                'model' => $this->ollamaModel(),
                 'prompt' => $prompt,
                 'stream' => false,
                 'options' => $options,
