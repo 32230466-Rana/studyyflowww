@@ -80,41 +80,56 @@ class PDFProcessor:
 
         return document_size, max_chars
 
-    def split_text(self, text: str, max_chars: int = 3000) -> list[str]:
+    def split_text(self, text: str, chunk_size: int = 400, overlap: int = 80) -> list[str]:
         """
-        Split long PDF text into smaller chunks.
-        No embeddings, no FAISS, no RAG.
+        Split PDF text into small overlapping chunks.
+
+        This is better for quiz accuracy because each model prompt receives
+        a focused section instead of a very large mixed context.
         """
+        if not text:
+            return []
+
+        # Normalize whitespace but keep page markers readable.
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
         chunks = []
-        current_chunk = ""
+        start = 0
+        text_length = len(text)
 
-        blocks = text.split("\n\n")
+        while start < text_length:
+            end = min(start + chunk_size, text_length)
+            chunk = text[start:end]
 
-        for block in blocks:
-            block = block.strip()
+            # Try not to cut in the middle of a sentence/paragraph when possible.
+            if end < text_length:
+                cut_points = [
+                    chunk.rfind("\n\n"),
+                    chunk.rfind("\n"),
+                    chunk.rfind(". "),
+                    chunk.rfind(" "),
+                ]
+                best_cut = max(cut_points)
 
-            if not block:
-                continue
+                # Only use the cut point if it does not make the chunk too small.
+                if best_cut >= int(chunk_size * 0.55):
+                    end = start + best_cut + 1
+                    chunk = text[start:end]
 
-            if len(current_chunk) + len(block) + 2 <= max_chars:
-                current_chunk += block + "\n\n"
-            else:
-                if current_chunk.strip():
-                    chunks.append(current_chunk.strip())
+            chunk = chunk.strip()
 
-                if len(block) > max_chars:
-                    for i in range(0, len(block), max_chars):
-                        part = block[i:i + max_chars].strip()
-                        if part:
-                            chunks.append(part)
-                    current_chunk = ""
-                else:
-                    current_chunk = block + "\n\n"
+            if chunk:
+                chunks.append(chunk)
 
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
+            if end >= text_length:
+                break
 
-        logger.info(f"PDF text split into {len(chunks)} chunk(s)")
+            start = max(0, end - overlap)
+
+        logger.info(
+            f"PDF text split into {len(chunks)} chunk(s) | chunk_size={chunk_size} | overlap={overlap}"
+        )
+
         return chunks
 
     def summarize_chunk(self, chunk: str, index: int, total: int) -> str:
@@ -269,10 +284,9 @@ SECTION SUMMARIES:
         PDF text extraction -> adaptive chunking -> summarization -> final summary.
 
         Behavior:
-        - Small PDFs keep max_chars = 3000.
-        - Medium PDFs keep max_chars = 6000.
-        - Large PDFs up to 15000 characters use max_chars = 15000.
-        - Very large PDFs use max_chars = 12000.
+        - Uses fixed small chunks for better accuracy.
+        - chunk_size = 400
+        - overlap = 80
         - No embeddings.
         - No FAISS.
         - No clustering.
@@ -285,9 +299,11 @@ SECTION SUMMARIES:
                 logger.warning("No readable text was found in this PDF.")
                 return "No readable text was found in this PDF."
 
-            document_size, max_chars = self.get_adaptive_chunk_size(text)
+            # Use fixed small chunks to reduce quiz/answer mismatch.
+            # Large adaptive chunks were causing mixed context and wrong answer keys.
+            document_size = "fixed-small"
 
-            chunks = self.split_text(text, max_chars=max_chars)
+            chunks = self.split_text(text, chunk_size=400, overlap=80)
 
             if not chunks:
                 logger.warning("No valid chunks were created from the PDF text.")
