@@ -21,7 +21,7 @@ import SummariesPage from "./pages/SummariesPage.jsx";
 import SavedChatPage from "./pages/SavedChatPage";
 import QuizPage from "./pages/QuizPage.jsx";
 import StudySummaryDesign from "./pages/StudySummaryDesign";
-
+import OllamaQuizPage from "./pages/OllamaQuizPage.jsx";
 import AdminDashboardPage from "./pages/AdminDashboardPage.jsx";
 import AdminUsersPage from "./pages/AdminUsersPage.jsx";
 import AdminNotesPage from "./pages/AdminNotesPage.jsx";
@@ -68,7 +68,7 @@ function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
-
+<Route path="/ollama-quiz" element={<OllamaQuizPage />} />
           <Route path="/notes" element={<NotesPage />} />
           <Route path="/notes/:id" element={<NoteDetailsPage />} />
 

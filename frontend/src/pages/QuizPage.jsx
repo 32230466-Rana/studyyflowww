@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ScreenRecorderMenu from "../components/ScreenRecorderMenu";
-
 const PDF_RAG_URL =
   import.meta.env.VITE_PDF_RAG_URL || "http://127.0.0.1:8003";
 
@@ -82,6 +81,21 @@ export default function QuizPage() {
   const [status, setStatus] = useState("Upload a PDF file to get started.");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [themeMode, setThemeMode] = useState("light");
+
+  useEffect(() => {
+    if (!selectedFile) {
+      setPdfPreviewUrl("");
+      return;
+    }
+
+    const url = URL.createObjectURL(selectedFile);
+    setPdfPreviewUrl(url);
+
+    return () => URL.revokeObjectURL(url);
+  }, [selectedFile]);
 
   const parsedQuestions = useMemo(() => {
     return parseMcqQuiz(quizText);
@@ -540,137 +554,442 @@ Explanation: ...
       }
     }
   }
-
   return (
-    <div className="quiz-page">
+    <div className={`quiz-page ${themeMode === "dark" ? "dark-mode" : ""}`}>
       <style>{`
         .quiz-page {
           width: 100%;
           min-height: 100vh;
-          background: #f7f7fb;
-          padding: 28px;
+          background: #ffffff;
+          color: #1f2937;
+          padding: 0;
+        }
+
+        .streamlit-shell {
+          width: 100%;
+          min-height: 100vh;
+          background: #ffffff;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .streamlit-topbar {
+          height: 58px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          border-bottom: 1px solid #e5e7eb;
+          padding: 0 18px;
+          background: #ffffff;
+          position: sticky;
+          top: 0;
+          z-index: 5;
+        }
+
+        .topbar-left {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          font-weight: 800;
           color: #111827;
         }
 
-        .quiz-shell {
-          max-width: 950px;
+        .collapse-icon {
+          border: none;
+          background: transparent;
+          font-size: 24px;
+          color: #64748b;
+          cursor: pointer;
+        }
+
+        .topbar-actions {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          color: #111827;
+          font-size: 14px;
+        }
+
+        .topbar-menu {
+          border: none;
+          background: transparent;
+          font-size: 24px;
+          cursor: pointer;
+          color: #111827;
+        }
+
+        .streamlit-body {
+          display: grid;
+          grid-template-columns: 260px 1fr;
+          min-height: calc(100vh - 58px);
+        }
+
+        .loaded-sidebar {
+          background: #f4f7fb;
+          border-right: 1px solid #e5e7eb;
+          padding: 28px 18px;
+        }
+
+        .sidebar-section-title {
+          font-size: 15px;
+          font-weight: 800;
+          margin-bottom: 18px;
+          color: #111827;
+        }
+
+        .metric-card {
+          margin-bottom: 22px;
+        }
+
+        .metric-label {
+          color: #475569;
+          font-size: 13px;
+          margin-bottom: 8px;
+        }
+
+        .metric-value {
+          font-size: 34px;
+          color: #111827;
+          font-weight: 500;
+        }
+
+        .pdf-expander {
+          margin: 26px 0;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          background: #ffffff;
+          padding: 12px;
+          color: #111827;
+          font-size: 14px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .delete-all-btn {
+          border: 1px solid #d1d5db;
+          background: #ffffff;
+          color: #111827;
+          border-radius: 8px;
+          padding: 11px 14px;
+          cursor: pointer;
+          font-weight: 600;
+        }
+
+        .main-workspace {
+          padding: 38px 40px 70px;
+          max-width: 1180px;
+          width: 100%;
           margin: 0 auto;
         }
 
-        .quiz-card {
-          background: #ffffff;
-          border-radius: 18px;
-          padding: 28px;
-          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-          border: 1px solid #e5e7eb;
-        }
-
-        .quiz-header-row {
-          position: relative;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-        }
-
-        .quiz-title {
-          text-align: center;
-          font-size: 28px;
+        .page-title {
+          font-size: 30px;
           font-weight: 800;
+          color: #111827;
+          margin: 0;
+          padding-bottom: 12px;
+          border-bottom: 2px solid #cbd5e1;
+        }
+
+        .main-grid {
+          display: grid;
+          grid-template-columns: minmax(310px, 0.95fr) minmax(420px, 1.25fr);
+          gap: 28px;
+          margin-top: 22px;
+          align-items: start;
+        }
+
+        .left-column,
+        .right-column {
+          min-width: 0;
+        }
+
+        .toggle-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 18px;
+          color: #111827;
+          font-size: 14px;
+        }
+
+        .fake-toggle {
+          width: 36px;
+          height: 20px;
+          background: #d1d5db;
+          border-radius: 999px;
+          position: relative;
+          flex: 0 0 auto;
+          margin-top: 2px;
+        }
+
+        .fake-toggle::after {
+          content: "";
+          width: 16px;
+          height: 16px;
+          background: #ffffff;
+          border-radius: 50%;
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+        }
+
+        .upload-label,
+        .model-label {
+          display: block;
+          color: #111827;
+          font-size: 14px;
           margin-bottom: 8px;
+          font-weight: 500;
         }
 
-        .quiz-subtitle {
-          text-align: center;
-          color: #6b7280;
-          margin-bottom: 24px;
-        }
-
-        .drop-box {
-          border: 2px dashed #111827;
-          border-radius: 16px;
-          background: #fafafa;
-          padding: 28px;
-          text-align: center;
+        .upload-card {
+          background: #eef2f7;
+          border-radius: 8px;
+          padding: 18px;
+          min-height: 106px;
+          display: flex;
+          align-items: center;
+          gap: 14px;
           cursor: pointer;
           transition: 0.2s ease;
+          border: 1px solid transparent;
         }
 
-        .drop-box:hover {
-          background: #f1f5f9;
+        .upload-card:hover {
+          border-color: #cbd5e1;
+          background: #e8edf5;
         }
 
-        .upload-icon {
-          font-size: 36px;
-          margin-bottom: 10px;
+        .cloud-icon {
+          font-size: 34px;
+          color: #8aa1c2;
         }
 
-        .file-name {
+        .upload-main-text {
+          color: #1f2937;
+          font-size: 15px;
+          line-height: 1.35;
+        }
+
+        .upload-sub-text {
+          color: #64748b;
+          font-size: 12px;
+          margin-top: 4px;
+        }
+
+        .browse-btn {
+          margin-left: auto;
+          background: #ffffff;
+          border: 1px solid #d1d5db;
+          color: #111827;
+          border-radius: 8px;
+          padding: 13px 16px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .file-pill {
           margin-top: 14px;
-          font-weight: 700;
-          color: #4f46e5;
+          background: #fce7e7;
+          color: #334155;
+          border-radius: 8px;
+          padding: 10px 12px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          max-width: 100%;
+          font-size: 13px;
         }
 
-        .actions {
+        .file-icon {
+          width: 32px;
+          height: 32px;
+          border-radius: 7px;
+          background: #ffffff;
           display: flex;
+          align-items: center;
           justify-content: center;
-          gap: 12px;
-          flex-wrap: wrap;
+        }
+
+        .file-pill strong {
+          color: #334155;
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          max-width: 180px;
+        }
+
+        .file-pill small {
+          color: #64748b;
+        }
+
+        .plus-line {
+          margin-top: 12px;
+          color: #64748b;
+          font-size: 24px;
+        }
+
+        .info-box {
+          background: #e8f3ff;
+          color: #075985;
+          border-radius: 8px;
+          padding: 18px;
+          margin-top: 16px;
+          line-height: 1.6;
+          font-size: 15px;
+        }
+
+        .delete-btn {
+          margin-top: 18px;
+          border: 1px solid #d1d5db;
+          background: #ffffff;
+          color: #111827;
+          border-radius: 8px;
+          padding: 11px 14px;
+          cursor: pointer;
+          font-weight: 600;
+        }
+
+        .zoom-row {
           margin-top: 22px;
         }
 
-        .btn {
-          border: none;
-          border-radius: 12px;
-          padding: 12px 18px;
-          font-weight: 700;
-          cursor: pointer;
-        }
-
-        .btn-primary {
-          background: #4f46e5;
-          color: white;
-        }
-
-        .btn-secondary {
-          background: #e5e7eb;
-          color: #111827;
-        }
-
-        .btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .quiz-extra-panel {
-          max-width: 520px;
-          margin: 22px auto 0;
-        }
-
-        .model-label {
-          display: block;
-          font-size: 14px;
-          color: #374151;
-          font-weight: 600;
+        .zoom-label {
+          display: flex;
+          justify-content: space-between;
+          font-size: 13px;
+          color: #334155;
           margin-bottom: 8px;
+        }
+
+        .zoom-range {
+          width: 100%;
+          accent-color: #ff4b4b;
+        }
+
+        .pdf-preview-box {
+          margin-top: 16px;
+          height: 420px;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          background: #ffffff;
+          overflow: hidden;
+        }
+
+        .pdf-preview-box iframe {
+          width: 100%;
+          height: 100%;
+          border: 0;
+        }
+
+        .empty-preview {
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #64748b;
+          text-align: center;
+          padding: 22px;
         }
 
         .model-select {
           width: 100%;
           border: none;
-          background: #eef0f5;
-          border-radius: 10px;
-          padding: 13px 14px;
+          background: #eef2f7;
+          border-radius: 8px;
+          padding: 14px;
+          color: #111827;
           font-size: 15px;
-          color: #1f2937;
           outline: none;
-          margin-bottom: 14px;
+          margin-bottom: 16px;
+        }
+
+        .chat-panel {
+          height: 500px;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          background: #ffffff;
+          padding: 18px;
+          overflow-y: auto;
+        }
+
+        .chat-empty,
+        .chat-loading {
+          height: 100%;
+          display: flex;
+          align-items: flex-start;
+          justify-content: center;
+          padding-top: 46px;
+          color: #64748b;
+        }
+
+        .chat-loading {
+          color: #16a34a;
+          gap: 10px;
+          justify-content: flex-start;
+          padding-left: 14px;
+        }
+
+        .bot-icon {
+          width: 34px;
+          height: 34px;
+          border-radius: 8px;
+          background: #ff9f1c;
+          color: #ffffff;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 auto;
+        }
+
+        .warning-box {
+          background: #fffbd1;
+          color: #92400e;
+          border-radius: 8px;
+          padding: 18px;
+          display: flex;
+          gap: 12px;
+          align-items: center;
+          width: 100%;
+        }
+
+        .quiz-generator-section {
+          margin-top: 24px;
+        }
+
+        .quiz-generator-title {
+          font-size: 26px;
+          font-weight: 800;
+          margin: 0 0 16px;
+          color: #111827;
+        }
+
+        .generate-btn {
+          border: none;
+          background: #ff4b4b;
+          color: #ffffff;
+          border-radius: 8px;
+          padding: 13px 18px;
+          cursor: pointer;
+          font-weight: 800;
+          font-size: 15px;
+          margin-bottom: 16px;
+        }
+
+        .generate-btn:disabled {
+          opacity: 0.65;
+          cursor: not-allowed;
         }
 
         .prompt-row {
           display: flex;
           align-items: center;
-          background: #eef0f5;
-          border-radius: 10px;
+          background: #eef2f7;
+          border-radius: 8px;
           overflow: hidden;
         }
 
@@ -678,7 +997,7 @@ Explanation: ...
           flex: 1;
           border: none;
           background: transparent;
-          padding: 13px 14px;
+          padding: 14px;
           font-size: 15px;
           outline: none;
           color: #111827;
@@ -688,7 +1007,7 @@ Explanation: ...
           border: none;
           background: transparent;
           color: #9ca3af;
-          font-size: 23px;
+          font-size: 24px;
           padding: 8px 14px;
           cursor: pointer;
         }
@@ -698,42 +1017,20 @@ Explanation: ...
           cursor: not-allowed;
         }
 
-        .upload-warning {
-          margin-top: 14px;
-          background: #fff8db;
-          color: #92400e;
-          border-radius: 10px;
-          padding: 16px;
-          text-align: left;
-          font-size: 14px;
-        }
-
         .status {
-          text-align: center;
-          color: #6b7280;
-          margin-top: 16px;
+          margin-top: 14px;
+          color: #64748b;
+          font-size: 14px;
+          line-height: 1.5;
         }
 
         .error {
-          margin-top: 18px;
+          margin-top: 16px;
           background: #fee2e2;
           color: #991b1b;
           border: 1px solid #fecaca;
-          padding: 12px;
-          border-radius: 12px;
-        }
-
-        .quiz-result {
-          margin-top: 26px;
-          background: #f9fafb;
-          border: 1px solid #e5e7eb;
-          border-radius: 16px;
-          padding: 22px;
-        }
-
-        .quiz-result h2 {
-          margin-bottom: 14px;
-          font-size: 22px;
+          padding: 13px;
+          border-radius: 8px;
         }
 
         .quiz-output {
@@ -741,12 +1038,6 @@ Explanation: ...
           line-height: 1.7;
           font-size: 15px;
           color: #111827;
-        }
-
-        .sources {
-          margin-top: 18px;
-          color: #6b7280;
-          font-size: 14px;
         }
 
         .quiz-interactive {
@@ -763,10 +1054,11 @@ Explanation: ...
         }
 
         .quiz-question-card h3 {
-          margin-bottom: 14px;
-          font-size: 18px;
-          font-weight: 700;
+          margin: 0 0 14px;
+          font-size: 17px;
+          font-weight: 800;
           color: #111827;
+          line-height: 1.45;
         }
 
         .quiz-options {
@@ -780,8 +1072,8 @@ Explanation: ...
           border: 1px solid #d1d5db;
           background: #ffffff;
           color: #111827;
-          border-radius: 12px;
-          padding: 12px 14px;
+          border-radius: 10px;
+          padding: 11px 13px;
           text-align: left;
           display: flex;
           gap: 10px;
@@ -790,13 +1082,13 @@ Explanation: ...
         }
 
         .quiz-option:hover {
-          border-color: #6366f1;
-          background: #f8f7ff;
+          border-color: #ff4b4b;
+          background: #fff5f5;
         }
 
         .quiz-option.selected {
-          border-color: #4f46e5;
-          background: #eef2ff;
+          border-color: #ff4b4b;
+          background: #fff1f1;
         }
 
         .quiz-option.correct {
@@ -810,7 +1102,7 @@ Explanation: ...
         }
 
         .quiz-option span {
-          font-weight: 700;
+          font-weight: 800;
         }
 
         .quiz-option p {
@@ -844,13 +1136,13 @@ Explanation: ...
           border: none;
           color: white;
           padding: 12px 18px;
-          border-radius: 12px;
-          font-weight: 700;
+          border-radius: 8px;
+          font-weight: 800;
           cursor: pointer;
         }
 
         .submit-answers-btn {
-          background: #4f46e5;
+          background: #ff4b4b;
         }
 
         .recommendation-link-btn {
@@ -863,283 +1155,598 @@ Explanation: ...
         }
 
         .quiz-hint {
-          color: #6b7280;
+          color: #64748b;
           margin-top: -8px;
         }
 
         .quiz-score {
           padding: 14px;
           background: #f3f4f6;
-          border-radius: 12px;
+          border-radius: 10px;
+          font-weight: 800;
+        }
+
+        .sources {
+          margin-top: 18px;
+          color: #64748b;
+          font-size: 14px;
+        }
+
+
+        .quiz-page {
+          overflow-x: hidden;
+        }
+
+        .quiz-page.dark-mode {
+          background: #0f172a;
+          color: #e5e7eb;
+        }
+
+        .quiz-page.dark-mode .streamlit-shell,
+        .quiz-page.dark-mode .streamlit-topbar,
+        .quiz-page.dark-mode .main-workspace,
+        .quiz-page.dark-mode .chat-panel,
+        .quiz-page.dark-mode .upload-card,
+        .quiz-page.dark-mode .model-select,
+        .quiz-page.dark-mode .prompt-row,
+        .quiz-page.dark-mode .settings-dropdown {
+          background: #111827;
+          color: #e5e7eb;
+        }
+
+        .quiz-page.dark-mode .loaded-sidebar {
+          background: #0b1220;
+        }
+
+        .quiz-page.dark-mode .page-title,
+        .quiz-page.dark-mode .topbar-left,
+        .quiz-page.dark-mode .upload-label,
+        .quiz-page.dark-mode .model-label,
+        .quiz-page.dark-mode .quiz-generator-title,
+        .quiz-page.dark-mode .dropdown-title,
+        .quiz-page.dark-mode .dropdown-item {
+          color: #f8fafc;
+        }
+
+        .quiz-page.dark-mode .streamlit-topbar,
+        .quiz-page.dark-mode .chat-panel,
+        .quiz-page.dark-mode .pdf-preview-box,
+        .quiz-page.dark-mode .settings-dropdown {
+          border-color: #334155;
+        }
+
+        .quiz-page.dark-mode .dropdown-text,
+        .quiz-page.dark-mode .status,
+        .quiz-page.dark-mode .upload-sub-text {
+          color: #cbd5e1;
+        }
+
+        .quiz-page.dark-mode .dropdown-item:hover {
+          background: #1e293b;
+        }
+
+        .main-workspace {
+          padding: 18px 32px 40px;
+        }
+
+        .chat-panel {
+          height: 360px;
+        }
+
+        .pdf-preview-box {
+          margin-top: 12px;
+          height: 300px;
+        }
+
+        .topbar-actions {
+          position: relative;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          color: #111827;
+          font-size: 14px;
+        }
+
+        .settings-dropdown {
+          position: absolute;
+          top: 42px;
+          right: 0;
+          width: 260px;
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
+          border-radius: 14px;
+          box-shadow: 0 16px 35px rgba(15, 23, 42, 0.14);
+          padding: 12px;
+          z-index: 50;
+        }
+
+        .dropdown-title {
+          font-weight: 800;
+          color: #111827;
+          margin-bottom: 6px;
+        }
+
+        .dropdown-text {
+          font-size: 13px;
+          color: #64748b;
+          margin: 0 0 10px;
+          line-height: 1.5;
+        }
+
+        .dropdown-item {
+          width: 100%;
+          border: none;
+          background: transparent;
+          color: #111827;
+          text-align: left;
+          padding: 10px;
+          border-radius: 10px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .dropdown-item:hover {
+          background: #f1f5f9;
+        }
+
+        .sidebar-bottom-settings {
+          margin-top: 22px;
+          padding-top: 16px;
+          border-top: 1px solid #d1d5db;
+        }
+
+        .sidebar-settings-btn {
+          width: 100%;
+          border: none;
+          background: transparent;
+          color: #475569;
+          text-align: left;
+          padding: 10px 0;
           font-weight: 700;
+          cursor: pointer;
         }
 
-        @media (max-width: 768px) {
-          .quiz-page {
-            padding: 16px;
-          }
-
-          .quiz-card {
-            padding: 18px;
-          }
-
-          .quiz-title {
-            font-size: 23px;
-            padding-right: 42px;
-          }
+        .sidebar-settings-btn:hover {
+          color: #111827;
         }
-      `}</style>
 
-      <div className="quiz-shell">
-        <div className="quiz-card">
-          <div className="quiz-header-row">
-            <h1 className="quiz-title">📚 AI Tutor – Smart Quiz Generator</h1>
-            <ScreenRecorderMenu />
-          </div>
+        @media (max-width: 1100px) {
+          .streamlit-body {
+            grid-template-columns: 1fr;
+          }
 
-          <p className="quiz-subtitle">
-            Upload a PDF and generate 5 exam-style MCQs using your local PDF RAG.
-          </p>
+          .loaded-sidebar {
+            display: none;
+          }
 
-          <div
-            className="drop-box"
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              handleFile(e.dataTransfer.files?.[0]);
-            }}
-          >
-            <div className="upload-icon">📁</div>
+          .main-workspace {
+            padding: 24px 18px 60px;
+          }
 
-            <strong>Drag & drop a PDF file here, or click to upload</strong>
+          .main-grid {
+            grid-template-columns: 1fr;
+          }
 
-            <p>Use your uploaded PDF content only.</p>
+          .chat-panel {
+            height: auto;
+            min-height: 300px;
+          }        }
+      `} 
+      </style>
+
+      <div className="streamlit-shell">
+        
+<div className="streamlit-topbar">
+  <div className="topbar-left">
+    <button className="collapse-icon" type="button">›</button>
+    <span>StudyFlow PDF Quiz</span>
+  </div>
+
+  <div className="topbar-actions">
+  <button
+    className="topbar-menu"
+    type="button"
+    onClick={() => setMenuOpen((prev) => !prev)}
+  >
+    ⋮
+  </button>
+
+  {menuOpen && (
+    <div className="settings-dropdown">
+      <div className="dropdown-title">About</div>
+      <p className="dropdown-text">
+        Generate a quiz from Jeneen and Rana.
+      </p>
+
+      <div className="dropdown-recorder">
+  <ScreenRecorderMenu />
+</div>
+      <button className="dropdown-item" type="button" onClick={() => setThemeMode("light")}>
+        Light mode
+      </button>
+
+      <button className="dropdown-item" type="button" onClick={() => setThemeMode("dark")}>
+        Dark mode
+      </button>
+    </div>
+  )}
+</div>
+</div>
+        <div className="streamlit-body">
+          <aside className="loaded-sidebar">
+            <div className="sidebar-section-title">Loaded PDFs</div>
+
+            <div className="metric-card">
+              <div className="metric-label">Total PDFs</div>
+              <div className="metric-value">{selectedFile ? 1 : 0}</div>
+            </div>
+
+            <div className="metric-card">
+              <div className="metric-label">Total Chunks</div>
+              <div className="metric-value">{sources.length || (selectedFile ? "..." : 0)}</div>
+            </div>
 
             {selectedFile && (
-              <div className="file-name">{selectedFile.name}</div>
-            )}
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              style={{ display: "none" }}
-              onChange={(e) => handleFile(e.target.files?.[0])}
-            />
-          </div>
-
-          <div className="actions">
-            <button
-              className="btn btn-secondary"
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={loading}
-            >
-              Choose PDF
-            </button>
-
-            <button
-              className="btn btn-primary"
-              type="button"
-              onClick={generateQuiz}
-              disabled={loading || !selectedFile}
-            >
-              {loading ? "Generating..." : "Generate 5 MCQs"}
-            </button>
-          </div>
-
-          <div className="quiz-extra-panel">
-            <label className="model-label">
-              Pick a model available locally on your system
-            </label>
-
-            <select
-              className="model-select"
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              disabled={loading}
-            >
-              <option value="llama3.2:3b">llama3.2:3b</option>
-              <option value="qwen3:1.7b">qwen3:1.7b</option>
-              <option value="phi3:mini">phi3:mini</option>
-            </select>
-
-            <div className="prompt-row">
-              <input
-                className="prompt-input"
-                type="text"
-                placeholder="Optional: focus MCQs on a topic..."
-                value={customPrompt}
-                onChange={(e) => setCustomPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && selectedFile && !loading) {
-                    generateQuiz();
-                  }
-                }}
-                disabled={loading}
-              />
-
-              <button
-                className="send-btn"
-                type="button"
-                onClick={generateQuiz}
-                disabled={loading || !selectedFile}
-                title="Generate quiz"
-              >
-                {loading ? "..." : "➤"}
-              </button>
-            </div>
-
-            {!selectedFile && (
-              <div className="upload-warning">
-                Upload a PDF file to get started.
+              <div className="pdf-expander" title={selectedFile.name}>
+                › {selectedFile.name}
               </div>
             )}
-          </div>
 
-          <div className="status">{status}</div>
+            <button
+              className="delete-all-btn"
+              type="button"
+              onClick={() => {
+                activeRequestIdRef.current = Date.now();
+                setSelectedFile(null);
+                setUploadedPdfId("");
+                setQuizText("");
+                setSources([]);
+                setSelectedAnswers({});
+                setSubmitted(false);
+                setError("");
+                setStatus("Upload a PDF file to get started.");
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = "";
+                }
+              }}
+            >
+              Delete All PDFs
+            </button>
 
-          {error && <div className="error">{error}</div>}
+            <div className="sidebar-bottom-settings">
+              <button
+                className="sidebar-settings-btn"
+                type="button"
+                onClick={() => setMenuOpen((prev) => !prev)}
+              >
+                Settings
+              </button>
+            </div>
+          </aside>
 
-          {quizText && (
-            <div className="quiz-result">
-              <h2>Generated Quiz</h2>
+          <main className="main-workspace">
+            <h1 className="page-title">Ollama PDF RAG playground</h1>
 
-              {parsedQuestions.length > 0 ? (
-                <div className="quiz-interactive">
-                  {parsedQuestions.map((q, index) => {
-                    const selected = selectedAnswers[q.id];
-                    const isCorrect = selected === q.correctAnswer;
+            <div className="main-grid">
+              <section className="left-column">
+                <div className="toggle-row">
+                  <span className="fake-toggle"></span>
+                  <span>Use sample PDF (Scammer Agent Paper)</span>
+                </div>
 
-                    return (
-                      <div className="quiz-question-card" key={q.id}>
-                        <h3>
-                          Q{index + 1}: {q.question}
-                        </h3>
+                <label className="upload-label">Upload PDF files</label>
 
-                        <div className="quiz-options">
-                          {q.options.map((option) => {
-                            const isSelected = selected === option.letter;
+                <div
+                  className="upload-card"
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleFile(e.dataTransfer.files?.[0]);
+                  }}
+                >
+                  <div className="cloud-icon">☁</div>
 
-                            const isCorrectOption =
-                              submitted && option.letter === q.correctAnswer;
+                  <div>
+                    <div className="upload-main-text">
+                      Drag and drop<br />files here
+                    </div>
+                    <div className="upload-sub-text">
+                      Limit 200MB per file • PDF
+                    </div>
+                  </div>
 
-                            const isWrongSelected =
-                              submitted &&
-                              isSelected &&
-                              option.letter !== q.correctAnswer;
+                  <button className="browse-btn" type="button">
+                    Browse files
+                  </button>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    style={{ display: "none" }}
+                    onChange={(e) => handleFile(e.target.files?.[0])}
+                  />
+                </div>
+
+                {selectedFile ? (
+                  <>
+                    <div className="file-pill">
+                      <div className="file-icon">▣</div>
+                      <div>
+                        <strong>{selectedFile.name}</strong>
+                        <small>{(selectedFile.size / (1024 * 1024)).toFixed(1)}MB</small>
+                      </div>
+                    </div>
+
+                    <div className="plus-line">＋</div>
+                  </>
+                ) : (
+                  <div className="info-box">
+                    Upload PDF files to view them here.
+                  </div>
+                )}
+
+                <button
+                  className="delete-btn"
+                  type="button"
+                  onClick={() => {
+                    setSelectedFile(null);
+                    setUploadedPdfId("");
+                    setQuizText("");
+                    setSources([]);
+                    setSelectedAnswers({});
+                    setSubmitted(false);
+                    setError("");
+                    setStatus("Upload a PDF file to get started.");
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = "";
+                    }
+                  }}
+                >
+                  Delete collection
+                </button>
+
+                {selectedFile && (
+                  <>
+                    <div className="zoom-row">
+                      <div className="zoom-label">
+                        <span>Zoom Level</span>
+                        <span>700</span>
+                      </div>
+                      <input className="zoom-range" type="range" min="100" max="1000" value="700" readOnly />
+                    </div>
+
+                    <div className="pdf-preview-box">
+                      {pdfPreviewUrl ? (
+                        <iframe src={pdfPreviewUrl} title="PDF preview" />
+                      ) : (
+                        <div className="empty-preview">PDF preview will appear here.</div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </section>
+
+              <section className="right-column">
+                <label className="model-label">
+                  Pick a model available locally on your system
+                </label>
+
+                <select
+                  className="model-select"
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  disabled={loading}
+                >
+                  <option value="llama3.2:3b">llama3.2:3b</option>
+                  <option value="qwen3:1.7b">qwen3:1.7b</option>
+                  <option value="phi3:mini">phi3:mini</option>
+                </select>
+
+                <div className="chat-panel">
+                  {loading ? (
+                    <div className="chat-loading">
+                      <span className="bot-icon">🤖</span>
+                      <span>processing...</span>
+                    </div>
+                  ) : quizText ? (
+                    <>
+                      {parsedQuestions.length > 0 ? (
+                        <div className="quiz-interactive">
+                          {parsedQuestions.map((q, index) => {
+                            const selected = selectedAnswers[q.id];
+                            const isCorrect = selected === q.correctAnswer;
 
                             return (
-                              <button
-                                type="button"
-                                key={option.letter}
-                                className={[
-                                  "quiz-option",
-                                  isSelected ? "selected" : "",
-                                  isCorrectOption ? "correct" : "",
-                                  isWrongSelected ? "wrong" : "",
-                                ].join(" ")}
-                                onClick={() =>
-                                  handleSelectAnswer(q.id, option.letter)
-                                }
-                              >
-                                <span>{option.letter}.</span>
-                                <p>{option.text}</p>
-                              </button>
+                              <div className="quiz-question-card" key={q.id}>
+                                <h3>
+                                  Q{index + 1}: {q.question}
+                                </h3>
+
+                                <div className="quiz-options">
+                                  {q.options.map((option) => {
+                                    const isSelected = selected === option.letter;
+
+                                    const isCorrectOption =
+                                      submitted && option.letter === q.correctAnswer;
+
+                                    const isWrongSelected =
+                                      submitted &&
+                                      isSelected &&
+                                      option.letter !== q.correctAnswer;
+
+                                    return (
+                                      <button
+                                        type="button"
+                                        key={option.letter}
+                                        className={[
+                                          "quiz-option",
+                                          isSelected ? "selected" : "",
+                                          isCorrectOption ? "correct" : "",
+                                          isWrongSelected ? "wrong" : "",
+                                        ].join(" ")}
+                                        onClick={() =>
+                                          handleSelectAnswer(q.id, option.letter)
+                                        }
+                                      >
+                                        <span>{option.letter}.</span>
+                                        <p>{option.text}</p>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                {submitted && (
+                                  <div
+                                    className={
+                                      isCorrect
+                                        ? "answer-result correct-text"
+                                        : "answer-result wrong-text"
+                                    }
+                                  >
+                                    {isCorrect ? (
+                                      <strong>Correct ✅</strong>
+                                    ) : (
+                                      <strong>
+                                        Wrong ❌ Correct answer: {q.correctAnswer}
+                                      </strong>
+                                    )}
+
+                                    {q.explanation && (
+                                      <p className="answer-explanation">
+                                        {q.explanation}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             );
                           })}
+
+                          {!submitted && (
+                            <button
+                              type="button"
+                              className="submit-answers-btn"
+                              onClick={handleSubmitAnswers}
+                              disabled={answeredCount !== parsedQuestions.length}
+                            >
+                              Submit Answers
+                            </button>
+                          )}
+
+                          {!submitted && answeredCount !== parsedQuestions.length && (
+                            <p className="quiz-hint">
+                              Answer all questions before submitting.
+                            </p>
+                          )}
+
+                          {submitted && (
+                            <>
+                              <div className="quiz-score">
+                                Score:{" "}
+                                {
+                                  parsedQuestions.filter(
+                                    (q) => selectedAnswers[q.id] === q.correctAnswer
+                                  ).length
+                                }
+                                /{parsedQuestions.length}
+                              </div>
+
+                              <button
+                                type="button"
+                                className="recommendation-link-btn"
+                                onClick={() => {
+                                  const saved = localStorage.getItem(
+                                    "studyflow_latest_quiz_recommendation"
+                                  );
+
+                                  const recommendation = saved ? JSON.parse(saved) : null;
+
+                                  navigate("/recommendations", {
+                                    state: {
+                                      recommendation,
+                                    },
+                                  });
+                                }}
+                              >
+                                View Study Recommendations
+                              </button>
+                            </>
+                          )}
                         </div>
+                      ) : (
+                        <div className="quiz-output">{quizText}</div>
+                      )}
 
-                        {submitted && (
-                          <div
-                            className={
-                              isCorrect
-                                ? "answer-result correct-text"
-                                : "answer-result wrong-text"
-                            }
-                          >
-                            {isCorrect ? (
-                              <strong>Correct ✅</strong>
-                            ) : (
-                              <strong>
-                                Wrong ❌ Correct answer: {q.correctAnswer}
-                              </strong>
-                            )}
-
-                            {q.explanation && (
-                              <p className="answer-explanation">
-                                {q.explanation}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  {!submitted && (
-                    <button
-                      type="button"
-                      className="submit-answers-btn"
-                      onClick={handleSubmitAnswers}
-                      disabled={answeredCount !== parsedQuestions.length}
-                    >
-                      Submit Answers
-                    </button>
-                  )}
-
-                  {!submitted && answeredCount !== parsedQuestions.length && (
-                    <p className="quiz-hint">
-                      Answer all questions before submitting.
-                    </p>
-                  )}
-
-                  {submitted && (
-                    <>
-                      <div className="quiz-score">
-                        Score:{" "}
-                        {
-                          parsedQuestions.filter(
-                            (q) => selectedAnswers[q.id] === q.correctAnswer
-                          ).length
-                        }
-                        /{parsedQuestions.length}
-                      </div>
-
-           <button
-  type="button"
-  className="recommendation-link-btn"
-  onClick={() => {
-    const saved = localStorage.getItem(
-      "studyflow_latest_quiz_recommendation"
-    );
-
-    const recommendation = saved ? JSON.parse(saved) : null;
-
-    navigate("/recommendations", {
-      state: {
-        recommendation,
-      },
-    });
-  }}
->
-  View Study Recommendations
-</button>
+                      {sources.length > 0 && (
+                        <div className="sources">
+                          Sources used: {sources.length} chunk(s)
+                        </div>
+                      )}
                     </>
+                  ) : selectedFile ? (
+                    <div className="chat-empty">
+                      <div className="warning-box">
+                        <span className="bot-icon">🤖</span>
+                        <span>Click Generate Quiz to create 5 MCQs from the uploaded PDF.</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="chat-empty">
+                      <div className="warning-box">
+                        <span className="bot-icon">🤖</span>
+                        <span>Please upload PDF files first.</span>
+                      </div>
+                    </div>
                   )}
                 </div>
-              ) : (
-                <div className="quiz-output">{quizText}</div>
-              )}
 
-              {sources.length > 0 && (
-                <div className="sources">
-                  Sources used: {sources.length} chunk(s)
+                <div className="quiz-generator-section">
+                  <h2 className="quiz-generator-title">Quiz Generator</h2>
+
+                  <button
+                    className="generate-btn"
+                    type="button"
+                    onClick={generateQuiz}
+                    disabled={loading || !selectedFile}
+                  >
+                    {loading ? "Generating..." : quizText ? "Regenerate Quiz" : "Generate 5 MCQs"}
+                  </button>
+
+                  <div className="prompt-row">
+                    <input
+                      className="prompt-input"
+                      type="text"
+                      placeholder="Enter a prompt here..."
+                      value={customPrompt}
+                      onChange={(e) => setCustomPrompt(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && selectedFile && !loading) {
+                          generateQuiz();
+                        }
+                      }}
+                      disabled={loading}
+                    />
+
+                    <button
+                      className="send-btn"
+                      type="button"
+                      onClick={generateQuiz}
+                      disabled={loading || !selectedFile}
+                      title="Generate quiz"
+                    >
+                      ↑
+                    </button>
+                  </div>
+
+                  <div className="status">{status}</div>
+
+                  {error && <div className="error">{error}</div>}
                 </div>
-              )}
+              </section>
             </div>
-          )}
+          </main>
         </div>
       </div>
     </div>
