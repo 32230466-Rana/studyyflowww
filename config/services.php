@@ -60,6 +60,7 @@ return [
         'host' => env('OLLAMA_HOST', 'http://127.0.0.1:11434'),
         'base_url' => env('OLLAMA_BASE_URL', 'http://127.0.0.1:11434'),
         'model' => env('OLLAMA_MODEL', 'llama3.2:3b'),
+        'quiz_model' => env('OLLAMA_QUIZ_MODEL', 'phi4-mini:latest'),
         'timeout' => env('OLLAMA_TIMEOUT', 620),
         'connect_timeout' => env('OLLAMA_CONNECT_TIMEOUT', 10),
     ],
