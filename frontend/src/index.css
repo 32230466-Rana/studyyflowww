@@ -577,6 +577,11 @@ body {
     color: #d97706;
     border-color: #fed7aa;
 }
+.badge-danger {
+    background: #fef2f2;
+    color: #b91c1c;
+    border-color: #fecaca;
+}
 .badge-info {
     background: #eff6ff;
     color: #3b82f6;

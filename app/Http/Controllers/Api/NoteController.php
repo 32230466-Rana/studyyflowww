@@ -10,6 +10,7 @@ use App\Services\Notes\NoteContentExtractor;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use App\Services\ActivityLogger;
 
 class NoteController extends Controller
 {
@@ -17,6 +18,10 @@ class NoteController extends Controller
     {
         $notes = $request->user()
             ->notes()
+            ->where(function ($query) {
+                $query->whereNull('status')
+                    ->orWhere('status', '!=', 'inactive');
+            })
             ->latest()
             ->paginate(15);
 
@@ -68,6 +73,14 @@ class NoteController extends Controller
             'status' => 'uploaded',
         ]);
 
+        ActivityLogger::log(
+            $request->user()->id,
+            'note_uploaded',
+            'Note uploaded',
+            $note->title ?? 'Untitled note',
+            Note::class,
+            $note->id
+        );
         // Best-effort extraction: never fail the upload if extraction is empty/unavailable.
         if ($uploadedFile && $storedPath) {
             try {
@@ -165,6 +178,10 @@ class NoteController extends Controller
     {
         return Note::query()
             ->where('user_id', $request->user()->id)
+            ->where(function ($query) {
+                $query->whereNull('status')
+                    ->orWhere('status', '!=', 'inactive');
+            })
             ->whereKey($id)
             ->firstOrFail();
     }

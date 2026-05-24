@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import axiosClient from "../api/axiosClient";
 import Spinner, { PageSpinner } from "../components/Spinner.jsx";
+import { formatStudySheetAsText } from "../components/StudySheetSummaryCard.jsx";
 
 function SearchIcon() {
     return (
@@ -203,7 +204,12 @@ export default function SummariesPage() {
     };
 
     const handleCopy = async (summary) => {
-        const ok = await copyToClipboard(summary.summary_text);
+        const ok = await copyToClipboard(
+            formatStudySheetAsText(summary.summary_text, {
+                title: summary.title,
+                sourceType: summary.source_type,
+            })
+        );
         if (!ok) {
             alert("Copy failed.");
             return;
@@ -345,7 +351,15 @@ export default function SummariesPage() {
                                         className="note-card-desc"
                                         style={{ marginTop: 6 }}
                                     >
-                                        {previewText(s.summary_text)}
+                                        {previewText(
+                                            formatStudySheetAsText(
+                                                s.summary_text,
+                                                {
+                                                    title: s.title,
+                                                    sourceType: s.source_type,
+                                                }
+                                            )
+                                        )}
                                     </div>
                                 </div>
                             </div>

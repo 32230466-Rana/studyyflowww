@@ -50,10 +50,14 @@ class AdminDashboardController extends Controller
             'featured_notes' => $this->countWhereBoolean('notes', 'is_featured', true),
             'ai_summaries' => $summaryCount,
             'active_users' => $this->countWhereValue('users', 'status', 'active'),
+            'inactive_users' => $this->countWhereValue('users', 'status', 'inactive'),
+            'online_users' => $this->countOnlineUsers(),
             'ai_usage_count' => $this->countTable('ai_usages'),
             'ai_usage' => $this->countTable('ai_usages'),
             'quizzes_created' => $quizCount,
             'quiz_count' => $quizCount,
+            'feedback_count' => $this->countTable('feedback'),
+            'announcements_count' => $this->countTable('announcements'),
             'files_uploaded' => $this->countUploadedFiles(),
             'today_users' => $this->countWhereDate('users', 'created_at', today()),
             'today_notes' => $this->countWhereDate('notes', 'created_at', today()),
@@ -164,6 +168,18 @@ class AdminDashboardController extends Controller
         return DB::table($table)->where($column, $value)->count();
     }
 
+    private function countOnlineUsers(): int
+    {
+        if (!Schema::hasTable('users') || !Schema::hasColumn('users', 'last_seen_at')) {
+            return 0;
+        }
+
+        return DB::table('users')
+            ->where('status', 'active')
+            ->where('last_seen_at', '>=', now()->subMinutes(5))
+            ->count();
+    }
+
     private function countWhereDate(string $table, string $column, $date): int
     {
         if (!Schema::hasTable($table) || !Schema::hasColumn($table, $column)) {
@@ -231,19 +247,36 @@ class AdminDashboardController extends Controller
             $select[] = 'status';
         }
 
+        if (Schema::hasColumn('users', 'last_login_at')) {
+            $select[] = 'last_login_at';
+        }
+
+        if (Schema::hasColumn('users', 'last_seen_at')) {
+            $select[] = 'last_seen_at';
+        }
+
         return User::query()
-            ->latest('created_at')
+            ->latest(Schema::hasColumn('users', 'last_seen_at') ? 'last_seen_at' : 'created_at')
             ->limit(8)
             ->get($select)
-            ->map(fn(User $user) => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => ($user->is_admin ?? false) ? 'admin' : 'user',
-                'is_admin' => (bool) ($user->is_admin ?? false),
-                'status' => $user->status ?? 'active',
-                'created_at' => $user->created_at,
-            ])
+            ->map(function (User $user) {
+                $isOnline = $user->last_seen_at
+                    && ($user->status ?? 'active') === 'active'
+                    && $user->last_seen_at->greaterThanOrEqualTo(now()->subMinutes(5));
+
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => ($user->is_admin ?? false) ? 'admin' : 'user',
+                    'is_admin' => (bool) ($user->is_admin ?? false),
+                    'status' => $user->status ?? 'active',
+                    'last_login_at' => $user->last_login_at ?? null,
+                    'last_seen_at' => $user->last_seen_at ?? null,
+                    'is_online' => (bool) $isOnline,
+                    'created_at' => $user->created_at,
+                ];
+            })
             ->values();
     }
 
@@ -263,6 +296,14 @@ class AdminDashboardController extends Controller
 
         if (Schema::hasColumn('notes', 'source_type')) {
             $select[] = 'source_type';
+        }
+
+        if (Schema::hasColumn('notes', 'status')) {
+            $select[] = 'status';
+        }
+
+        if (Schema::hasColumn('notes', 'ai_summary')) {
+            $select[] = 'ai_summary';
         }
 
         if (Schema::hasColumn('notes', 'is_featured')) {
@@ -285,7 +326,12 @@ class AdminDashboardController extends Controller
                 'source_type' => $note->source_type ?? '-',
                 'source' => $note->source_type ?? '-',
                 'type' => $note->source_type ?? '-',
+                'status' => $note->status ?? 'active',
                 'is_featured' => (bool) ($note->is_featured ?? false),
+                'has_summary' => filled($note->ai_summary ?? null),
+                'summary' => filled($note->ai_summary ?? null)
+                    ? str((string) $note->ai_summary)->limit(140)->toString()
+                    : '',
                 'created_at' => $note->created_at,
                 'user' => $note->user ? [
                     'id' => $note->user->id,

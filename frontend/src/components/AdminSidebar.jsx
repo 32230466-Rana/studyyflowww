@@ -181,6 +181,61 @@ export default function AdminSidebar({ open, onClose }) {
                         Notes
                     </NavLink>
 
+                    <NavLink
+                        to="/admin/announcements"
+                        className={({ isActive }) =>
+                            `sidebar-link ${isActive ? "active" : ""}`
+                        }
+                        onClick={onClose}
+                    >
+                        <NotesIcon />
+                        Announcements
+                    </NavLink>
+
+                    <NavLink
+                        to="/admin/feedback"
+                        className={({ isActive }) =>
+                            `sidebar-link ${isActive ? "active" : ""}`
+                        }
+                        onClick={onClose}
+                    >
+                        <NotesIcon />
+                        Feedback
+                    </NavLink>
+
+                    <NavLink
+                        to="/admin/ai-management"
+                        className={({ isActive }) =>
+                            `sidebar-link ${isActive ? "active" : ""}`
+                        }
+                        onClick={onClose}
+                    >
+                        <NotesIcon />
+                        AI Management
+                    </NavLink>
+
+                    <NavLink
+                        to="/admin/quizzes"
+                        className={({ isActive }) =>
+                            `sidebar-link ${isActive ? "active" : ""}`
+                        }
+                        onClick={onClose}
+                    >
+                        <NotesIcon />
+                        Quizzes
+                    </NavLink>
+
+                    <NavLink
+                        to="/admin/settings"
+                        className={({ isActive }) =>
+                            `sidebar-link ${isActive ? "active" : ""}`
+                        }
+                        onClick={onClose}
+                    >
+                        <NotesIcon />
+                        Settings
+                    </NavLink>
+
                     <div className="sidebar-section-label" style={{ marginTop: 8 }}>
                         Main app
                     </div>

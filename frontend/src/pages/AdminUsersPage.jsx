@@ -12,6 +12,16 @@ function formatDate(value) {
     }
 }
 
+function formatDateTime(value) {
+    if (!value) return "Never";
+
+    try {
+        return new Date(value).toLocaleString();
+    } catch {
+        return String(value);
+    }
+}
+
 function getApiError(error, fallback = "Something went wrong.") {
     const data = error?.response?.data;
 
@@ -36,6 +46,14 @@ function StatusBadge({ status }) {
     }
 
     return <span className="badge badge-warning">inactive</span>;
+}
+
+function ActivityBadge({ online }) {
+    return online ? (
+        <span className="badge badge-success">online</span>
+    ) : (
+        <span className="badge badge-default">offline</span>
+    );
 }
 
 function Table({ columns, rows, emptyText }) {
@@ -134,6 +152,7 @@ export default function AdminUsersPage() {
     const [search, setSearch] = useState("");
     const [role, setRole] = useState("all");
     const [status, setStatus] = useState("all");
+    const [activity, setActivity] = useState("all");
 
     const [formOpen, setFormOpen] = useState(false);
     const [editing, setEditing] = useState(null);
@@ -171,6 +190,12 @@ export default function AdminUsersPage() {
                 params.status = status;
             }
 
+            if (activity !== "all") {
+                params.activity = activity;
+            }
+
+            params.sort = "last_seen_at";
+
             const res = await axiosClient.get("/admin/users", { params });
             const data = res.data?.data || {};
 
@@ -204,7 +229,7 @@ export default function AdminUsersPage() {
 
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [search, role, status, pagination.per_page]);
+    }, [search, role, status, activity, pagination.per_page]);
 
     const openCreate = () => {
         setError("");
@@ -334,9 +359,7 @@ export default function AdminUsersPage() {
         setError("");
 
         try {
-            await axiosClient.post(`/admin/users/${user.id}/change-role`, {
-                is_admin: user.is_admin ? 0 : 1,
-            });
+            await axiosClient.patch(`/admin/users/${user.id}/toggle-admin`);
 
             await load(page);
         } catch (e) {
@@ -349,9 +372,7 @@ export default function AdminUsersPage() {
         setError("");
 
         try {
-            await axiosClient.post(`/admin/users/${user.id}/change-status`, {
-                status: user.status === "active" ? "inactive" : "active",
-            });
+            await axiosClient.patch(`/admin/users/${user.id}/toggle-status`);
 
             await load(page);
         } catch (e) {
@@ -447,6 +468,28 @@ export default function AdminUsersPage() {
                                 <option value="all">All</option>
                                 <option value="admin">Admin</option>
                                 <option value="user">User</option>
+                            </select>
+                        </div>
+
+                        <div
+                            className="field"
+                            style={{
+                                marginBottom: 0,
+                                minWidth: 180,
+                                flex: "0 0 auto",
+                            }}
+                        >
+                            <label className="field-label">Activity</label>
+
+                            <select
+                                className="input"
+                                value={activity}
+                                onChange={(e) => setActivity(e.target.value)}
+                            >
+                                <option value="all">All</option>
+                                <option value="online">Online now</option>
+                                <option value="offline">Offline</option>
+                                <option value="never">Never logged in</option>
                             </select>
                         </div>
 
@@ -717,6 +760,9 @@ export default function AdminUsersPage() {
                     "Email",
                     "Role",
                     "Status",
+                    "Activity",
+                    "Last Login",
+                    "Last Seen",
                     "Created",
                     "Actions",
                 ]}
@@ -743,6 +789,15 @@ export default function AdminUsersPage() {
                         key={`${user.id}-status`}
                         status={user.status}
                     />,
+
+                    <ActivityBadge
+                        key={`${user.id}-activity`}
+                        online={Boolean(user.is_online)}
+                    />,
+
+                    formatDateTime(user.last_login_at),
+
+                    formatDateTime(user.last_seen_at),
 
                     formatDate(user.created_at),
 

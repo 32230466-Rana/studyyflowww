@@ -28,7 +28,7 @@ class PDFListItem(BaseModel):
 class QueryRequest(BaseModel):
     """Request model for RAG query."""
     question: str
-    model: str = llama3.2:3b"
+    model: str = "llama3.2:3b"
     pdf_ids: Optional[List[str]] = None
     session_id: Optional[str] = None
 

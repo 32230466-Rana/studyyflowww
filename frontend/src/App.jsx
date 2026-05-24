@@ -71,7 +71,7 @@ function App() {
 <Route path="/ollama-quiz" element={<OllamaQuizPage />} />
           <Route path="/notes" element={<NotesPage />} />
           <Route path="/notes/:id" element={<NoteDetailsPage />} />
-
+<Route path="/summaries/:id" element={<StudySummaryDesign />} />
           <Route path="/summaries" element={<SummariesPage />} />
 
           <Route path="/study-chat" element={<SavedChatPage />} />

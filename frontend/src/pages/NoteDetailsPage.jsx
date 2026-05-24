@@ -4,6 +4,11 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import axiosClient from "../api/axiosClient";
 import ChatMessage, { TypingIndicator } from "../components/ChatMessage.jsx";
 import { PageSpinner } from "../components/Spinner.jsx";
+import StudySheetSummaryCard, {
+    formatStudySheetAsText,
+    normalizeStudySheetSummary,
+    serializeStudySheetSummary,
+} from "../components/StudySheetSummaryCard.jsx";
 
 import {
     getAiConversations,
@@ -37,6 +42,7 @@ export default function NoteDetailsPage() {
     const [busy, setBusy] = useState(false);
 
     const [summary, setSummary] = useState("");
+    const [summarySheet, setSummarySheet] = useState(null);
     const [summaryFilename, setSummaryFilename] = useState("");
     const [summaryLoading, setSummaryLoading] = useState(false);
     const [summaryTime, setSummaryTime] = useState(null);
@@ -175,6 +181,7 @@ export default function NoteDetailsPage() {
         try {
             setAiError("");
             setSummary("");
+            setSummarySheet(null);
             setSummaryTime(null);
             setSummaryLoading(true);
 
@@ -212,7 +219,23 @@ export default function NoteDetailsPage() {
                 return;
             }
 
+            const displayTitle = `Summary of ${
+                note?.title || note?.original_filename || "this note"
+            }`;
+            const generatedSheet = normalizeStudySheetSummary(
+                {
+                    ...res.data,
+                    summary: summaryText,
+                },
+                {
+                    title: displayTitle,
+                    sourceType: isPdfNote ? "pdf" : "text",
+                    fileName: note?.original_filename || note?.title || "",
+                }
+            );
+
             setSummary(summaryText);
+            setSummarySheet(generatedSheet);
 
             setSummaryFilename(
                 note?.original_filename || note?.title || "this note"
@@ -221,11 +244,13 @@ export default function NoteDetailsPage() {
             try {
                 await axiosClient.post("/summaries", {
                     note_id: note.id,
-                    title: `Summary of ${
-                        note?.title || note?.original_filename || "this note"
-                    }`,
+                    title: displayTitle,
                     source_type: isPdfNote ? "pdf" : "text",
-                    summary_text: summaryText,
+                    summary_text: serializeStudySheetSummary(generatedSheet, {
+                        title: displayTitle,
+                        sourceType: isPdfNote ? "pdf" : "text",
+                        fileName: note?.original_filename || note?.title || "",
+                    }),
                 });
 
                 notifyDashboardUpdate("studyflow_ai_summaries_count");
@@ -291,9 +316,20 @@ export default function NoteDetailsPage() {
 
         const outputName = `Summary_of_${safeBase || `note-${id}`}.txt`;
 
-        const blob = new Blob([summary], {
-            type: "text/plain;charset=utf-8",
-        });
+        const blob = new Blob(
+            [
+                formatStudySheetAsText(summarySheet || summary, {
+                    title: `Summary of ${
+                        note?.title || note?.original_filename || "this note"
+                    }`,
+                    sourceType: isPdfNote ? "pdf" : "text",
+                    fileName: note?.original_filename || note?.title || "",
+                }),
+            ],
+            {
+                type: "text/plain;charset=utf-8",
+            }
+        );
 
         const url = URL.createObjectURL(blob);
 
@@ -679,10 +715,10 @@ export default function NoteDetailsPage() {
                     <div
                         style={{
                             marginTop: 20,
-                            padding: "16px 18px",
+                            padding: 0,
                             borderRadius: "14px",
-                            background: "#f8fafc",
-                            border: "1px solid #e5e7eb",
+                            background: "transparent",
+                            border: "none",
                         }}
                     >
                         <div
@@ -724,16 +760,18 @@ export default function NoteDetailsPage() {
                             </div>
                         )}
 
-                        <div
-                            style={{
-                                whiteSpace: "pre-wrap",
-                                lineHeight: "1.9",
-                                color: "#111827",
-                                fontSize: "15px",
-                            }}
-                        >
-                            {summary}
-                        </div>
+                        <StudySheetSummaryCard
+                            summary={summarySheet || summary}
+                            title={`Summary of ${
+                                summaryFilename ||
+                                note?.original_filename ||
+                                "this note"
+                            }`}
+                            sourceLabel={isPdfNote ? "PDF Summary" : "Text Summary"}
+                            meta={[
+                                summaryTime ? { label: `${summaryTime}s` } : null,
+                            ].filter(Boolean)}
+                        />
                     </div>
                 )}
             </div>

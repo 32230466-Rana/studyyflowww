@@ -208,6 +208,12 @@ export default function AdminDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [users, setUsers] = useState([]);
+const [activities, setActivities] = useState([]);
+const [examReminders, setExamReminders] = useState([]);
+const [quizReports, setQuizReports] = useState([]);
+const [studyPlans, setStudyPlans] = useState([]);
+const [adminLoading, setAdminLoading] = useState(false);
 
   const analyticsRef = useRef(null);
   const usersTableRef = useRef(null);
@@ -460,6 +466,7 @@ export default function AdminDashboard() {
       ],
     },
   ];
+  
 
   if (loading) {
     return (
@@ -471,7 +478,39 @@ export default function AdminDashboard() {
       </div>
     );
   }
+const loadAdminFeatures = async () => {
+  try {
+    setAdminLoading(true);
 
+    const [
+      usersRes,
+      activitiesRes,
+      remindersRes,
+      reportsRes,
+      plansRes,
+    ] = await Promise.all([
+      axiosClient.get("/admin/users"),
+      axiosClient.get("/admin/recent-activities"),
+      axiosClient.get("/admin/exam-reminders"),
+      axiosClient.get("/admin/quiz-reports"),
+      axiosClient.get("/admin/study-plans"),
+    ]);
+
+    setUsers(usersRes.data.users || []);
+    setActivities(activitiesRes.data.activities || []);
+    setExamReminders(remindersRes.data.reminders || []);
+    setQuizReports(reportsRes.data.reports || []);
+    setStudyPlans(plansRes.data.plans || []);
+  } catch (error) {
+    console.error(error);
+  } finally {
+    setAdminLoading(false);
+  }
+};
+
+useEffect(() => {
+  loadAdminFeatures();
+}, []);
   return (
     <div className="w-full bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-[1500px] space-y-7">

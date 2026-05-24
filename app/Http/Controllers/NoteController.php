@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Note;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use App\Services\ActivityLogger;
 
 class NoteController extends Controller
 {
@@ -58,6 +59,14 @@ class NoteController extends Controller
             'status' => 'uploaded'
         ]);
 
+        ActivityLogger::log(
+            $request->user()->id,
+            'note_uploaded',
+            'Note uploaded',
+            $note->title ?? 'Untitled note',
+            \App\Models\Note::class,
+            $note->id
+        );
         return response()->json([
             'message' => 'Note created successfully',
             'note' => $note

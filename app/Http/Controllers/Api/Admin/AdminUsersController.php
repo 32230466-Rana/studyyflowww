@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class AdminUsersController extends Controller
@@ -32,10 +33,37 @@ class AdminUsersController extends Controller
             $query->where('status', (string) $request->input('status'));
         }
 
+        if ($request->filled('activity') && Schema::hasColumn('users', 'last_seen_at')) {
+            $activity = (string) $request->input('activity');
+            $onlineCutoff = now()->subMinutes(5);
+
+            if ($activity === 'online') {
+                $query->where('status', 'active')
+                    ->where('last_seen_at', '>=', $onlineCutoff);
+            } elseif ($activity === 'offline') {
+                $query->where(function ($q) use ($onlineCutoff) {
+                    $q->whereNull('last_seen_at')
+                        ->orWhere('last_seen_at', '<', $onlineCutoff)
+                        ->orWhere('status', '!=', 'active');
+                });
+            } elseif ($activity === 'never') {
+                $query->whereNull('last_login_at');
+            }
+        }
+
         $perPage = (int) $request->input('per_page', 10);
         $perPage = max(5, min(100, $perPage));
 
-        $users = $query->orderByDesc('created_at')->paginate($perPage);
+        $direction = strtolower((string) $request->input('direction', 'desc')) === 'asc' ? 'asc' : 'desc';
+        $sort = (string) $request->input('sort', 'created_at');
+
+        if (in_array($sort, ['last_login_at', 'last_seen_at', 'name', 'email', 'created_at'], true)) {
+            $query->orderBy($sort, $direction);
+        } else {
+            $query->orderByDesc('created_at');
+        }
+
+        $users = $query->paginate($perPage);
 
         return ApiResponse::success([
             'users' => UserResource::collection($users->items()),
@@ -92,6 +120,20 @@ class AdminUsersController extends Controller
             }
         }
 
+        if (array_key_exists('status', $validated) && $validated['status'] !== 'active') {
+            if ($request->user()?->id === $user->id) {
+                return ApiResponse::error('You cannot deactivate your own account', 403);
+            }
+
+            if ((bool) $user->is_admin) {
+                $activeAdminCount = User::where('is_admin', true)->where('status', 'active')->count();
+
+                if ($activeAdminCount <= 1) {
+                    return ApiResponse::error('Cannot deactivate the only active admin', 403);
+                }
+            }
+        }
+
         $user->fill(collect($validated)->except(['password'])->toArray());
 
         if (! empty($validated['password'])) {
@@ -99,6 +141,13 @@ class AdminUsersController extends Controller
         }
 
         $user->save();
+
+        if (($user->status ?? 'active') !== 'active') {
+            $user->tokens()->delete();
+            $user->forceFill([
+                'last_seen_at' => now()->subMinutes(10),
+            ])->save();
+        }
 
         return ApiResponse::success(new UserResource($user), 'User updated');
     }
@@ -152,6 +201,13 @@ class AdminUsersController extends Controller
         }
 
         $user->update(['status' => $next]);
+
+        if ($next !== 'active') {
+            $user->tokens()->delete();
+            $user->forceFill([
+                'last_seen_at' => now()->subMinutes(10),
+            ])->save();
+        }
 
         return ApiResponse::success(new UserResource($user), 'User status toggled');
     }

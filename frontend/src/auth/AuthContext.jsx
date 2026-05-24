@@ -30,6 +30,43 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);
     }, []);
 
+    useEffect(() => {
+        if (!token) return undefined;
+
+        let cancelled = false;
+
+        const refreshMe = async () => {
+            try {
+                const response = await authAPI.me();
+                const freshUser = response?.data?.user || response?.data?.data?.user;
+
+                if (!cancelled && freshUser) {
+                    localStorage.setItem("user", JSON.stringify(freshUser));
+                    setUser(freshUser);
+                }
+            } catch (error) {
+                if (error?.response?.status === 401 || error?.response?.status === 403) {
+                    localStorage.removeItem("authToken");
+                    localStorage.removeItem("user");
+
+                    if (!cancelled) {
+                        setUser(null);
+                        setToken(null);
+                    }
+                }
+            }
+        };
+
+        refreshMe();
+
+        const interval = window.setInterval(refreshMe, 60000);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
+    }, [token]);
+
     const saveAuth = (userData, authToken) => {
         localStorage.setItem("authToken", authToken);
         localStorage.setItem("user", JSON.stringify(userData));

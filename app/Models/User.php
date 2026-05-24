@@ -22,6 +22,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'is_admin',
         'status',
         'last_login_at',
+        'last_seen_at',
         'last_reminder_sent_at',
     ];
     /**
@@ -34,6 +35,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'is_admin' => 'boolean',
             'password' => 'hashed',
             'last_login_at' => 'datetime',
+            'last_seen_at' => 'datetime',
             'last_reminder_sent_at' => 'datetime',
         ];
     }

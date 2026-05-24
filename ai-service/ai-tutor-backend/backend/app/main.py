@@ -518,35 +518,33 @@ def _extract_cards_with_llm(pages: list[dict[str, Any]], title: str) -> list[dic
         parts.append(f"[Page {p['page']}]\n{_shorten(p['text'], 1100)}")
 
     context = "\n\n---\n\n".join(parts)[:14000]
-
     prompt = f"""
-Extract source-grounded study cards from the PDF text only.
+You are extracting study cards from a PDF.
+Use ONLY the provided PDF content.
+Return ONLY valid JSON. No markdown. No extra text.
 
-Return JSON only:
+JSON format:
 {{
   "cards": [
     {{
-      "term": "short concept/term from the PDF",
-      "definition": "what the PDF says about it, in one sentence",
-      "page": 1,
-      "source": "exact short quote copied from the PDF text"
+      "term": "short concept name from the PDF",
+      "definition": "clear definition or description supported by the PDF",
+      "source": "short exact or near-exact supporting sentence from the PDF",
+      "page": 1
     }}
   ]
 }}
 
 Rules:
-- Extract 12 cards.
-- Use only concepts explicitly present in the PDF.
-- The source must be copied from the PDF text, not invented.
-- Do not create questions.
-- Do not choose answers.
+- Extract 12 to 20 useful cards if possible.
+- Do not invent anything.
+- Avoid generic terms such as Introduction, Conclusion, Chapter, Page.
+- Keep terms short.
+- Each definition must be grounded in the PDF text.
 
-Title: {title}
-
-PDF TEXT:
+PDF Content:
 {context}
-""".strip()
-
+"""
     try:
         raw = _call_ollama(prompt, temperature=0.0, num_predict=2200)
     except Exception:

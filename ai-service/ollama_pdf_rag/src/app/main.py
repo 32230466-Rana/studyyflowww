@@ -13,6 +13,8 @@ import shutil
 import pdfplumber
 import ollama
 import warnings
+import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +38,7 @@ os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
 # Define persistent directory for ChromaDB
 PERSIST_DIRECTORY = os.path.join("data", "vectors")
+MCQ_LETTERS = ("A", "B", "C", "D")
 
 # Streamlit page configuration
 st.set_page_config(
@@ -221,6 +224,319 @@ def delete_all_pdfs():
     st.session_state["active_pdfs"] = []
 
 
+def is_mcq_request(question: str) -> bool:
+    q = str(question or "").lower()
+    return any(
+        trigger in q
+        for trigger in (
+            "mcq",
+            "mcqs",
+            "multiple choice",
+            "multiple-choice",
+            "quiz",
+            "correct answer",
+            "generate exactly 5",
+            "a, b, c, d",
+        )
+    )
+
+
+def compact_for_verifier(text: str, max_chars: int = 12000) -> str:
+    text = str(text or "").strip()
+    if len(text) <= max_chars:
+        return text
+
+    head = max_chars // 2
+    tail = max_chars - head
+    return text[:head].rstrip() + "\n\n[...context shortened...]\n\n" + text[-tail:].lstrip()
+
+
+def ollama_message_content(response: Any) -> str:
+    message = getattr(response, "message", None)
+    if message is not None:
+        content = getattr(message, "content", None)
+        if content:
+            return str(content).strip()
+
+    if isinstance(response, dict):
+        message = response.get("message")
+        if isinstance(message, dict):
+            return str(message.get("content") or "").strip()
+        return str(response.get("response") or "").strip()
+
+    return ""
+
+
+def extract_json_object(text: str) -> Optional[dict]:
+    text = str(text or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)
+    text = re.sub(r"\s*```$", "", text)
+
+    start = text.find("{")
+    end = text.rfind("}")
+
+    if start < 0 or end < 0 or end <= start:
+        return None
+
+    try:
+        payload = json.loads(text[start:end + 1])
+    except Exception:
+        return None
+
+    return payload if isinstance(payload, dict) else None
+
+
+def parse_mcq_quiz(quiz_text: str) -> List[Dict[str, Any]]:
+    text = str(quiz_text or "").replace("\r\n", "\n").replace("\r", "\n")
+    block_pattern = re.compile(
+        r"Q(?P<number>\d+)\s*(?:\((?P<difficulty>[^)]*)\))?\s*:\s*(?P<body>.*?)(?=\n\s*Q\d+\s*(?:\([^)]+\))?\s*:|\Z)",
+        flags=re.I | re.S,
+    )
+
+    parsed: List[Dict[str, Any]] = []
+
+    for match in block_pattern.finditer(text):
+        body = match.group("body").strip()
+        first_option = re.search(r"^\s*A[\.\):\-]\s*", body, flags=re.I | re.M)
+
+        if not first_option:
+            continue
+
+        question_text = re.sub(r"\s+", " ", body[:first_option.start()].strip())
+
+        option_matches = re.findall(
+            r"^\s*([A-D])[\.\):\-]\s*(.+?)\s*$",
+            body,
+            flags=re.I | re.M,
+        )
+
+        options: Dict[str, str] = {}
+        for letter, option_text in option_matches:
+            letter = letter.upper()
+            if letter in MCQ_LETTERS and letter not in options:
+                options[letter] = re.sub(r"\s+", " ", option_text).strip()
+
+        if tuple(options.keys()) != MCQ_LETTERS:
+            continue
+
+        correct_match = re.search(
+            r"^\s*Correct\s+answer\s*:\s*([A-D])\b",
+            body,
+            flags=re.I | re.M,
+        )
+
+        explanation_match = re.search(
+            r"^\s*Explanation\s*:\s*(.*)",
+            body,
+            flags=re.I | re.M | re.S,
+        )
+
+        if not correct_match or not explanation_match:
+            continue
+
+        try:
+            number = int(match.group("number"))
+        except Exception:
+            continue
+
+        parsed.append(
+            {
+                "number": number,
+                "difficulty": (match.group("difficulty") or "").strip(),
+                "question": question_text,
+                "options": options,
+                "correct_answer": correct_match.group(1).upper(),
+                "explanation": re.sub(r"\s+", " ", explanation_match.group(1)).strip(),
+            }
+        )
+
+    return parsed
+
+
+def format_mcq_quiz(items: List[Dict[str, Any]]) -> str:
+    blocks = []
+
+    for item in items:
+        number = int(item["number"])
+        difficulty = str(item.get("difficulty") or "").strip()
+        question = re.sub(r"\s+", " ", str(item.get("question") or "")).strip()
+        options = item.get("options") or {}
+        correct_answer = str(item.get("correct_answer") or "").strip().upper()
+        explanation = re.sub(r"\s+", " ", str(item.get("explanation") or "")).strip()
+
+        if difficulty:
+            header = f"Q{number} ({difficulty}): {question}"
+        else:
+            header = f"Q{number}: {question}"
+
+        blocks.append(
+            "\n".join(
+                [
+                    header,
+                    f"A. {options.get('A', '').strip()}",
+                    f"B. {options.get('B', '').strip()}",
+                    f"C. {options.get('C', '').strip()}",
+                    f"D. {options.get('D', '').strip()}",
+                    f"Correct answer: {correct_answer}",
+                    f"Explanation: {explanation}",
+                ]
+            )
+        )
+
+    return "\n\n".join(blocks).strip()
+
+
+def apply_mcq_verifier_payload(original_quiz: str, verifier_payload: Optional[dict]) -> Optional[str]:
+    original_items = parse_mcq_quiz(original_quiz)
+
+    if not original_items:
+        return None
+
+    if not isinstance(verifier_payload, dict):
+        return None
+
+    verifier_questions = verifier_payload.get("questions")
+    if not isinstance(verifier_questions, list):
+        return None
+
+    by_number = {item["number"]: item for item in original_items}
+    updates: Dict[int, Dict[str, str]] = {}
+
+    for item in verifier_questions:
+        if not isinstance(item, dict):
+            return None
+
+        try:
+            number = int(item.get("number"))
+        except Exception:
+            return None
+
+        if number not in by_number:
+            return None
+
+        correct_answer = str(item.get("correct_answer") or "").strip().upper()
+        if correct_answer not in MCQ_LETTERS:
+            return None
+
+        explanation = re.sub(r"\s+", " ", str(item.get("explanation") or "")).strip()
+        if not explanation:
+            explanation = by_number[number]["explanation"]
+
+        updates[number] = {
+            "correct_answer": correct_answer,
+            "explanation": explanation[:500],
+        }
+
+    if set(updates.keys()) != set(by_number.keys()):
+        return None
+
+    changed = False
+    updated_items: List[Dict[str, Any]] = []
+
+    for item in original_items:
+        update = updates[item["number"]]
+        next_item = dict(item)
+
+        if update["correct_answer"] != item["correct_answer"]:
+            changed = True
+
+        if update["explanation"] and update["explanation"] != item["explanation"]:
+            changed = True
+
+        next_item["correct_answer"] = update["correct_answer"]
+        next_item["explanation"] = update["explanation"]
+        updated_items.append(next_item)
+
+    if not changed:
+        return original_quiz
+
+    return format_mcq_quiz(updated_items)
+
+
+def verify_mcq_after_generation(context: str, quiz_text: str, selected_model: str) -> str:
+    original_items = parse_mcq_quiz(quiz_text)
+
+    if not original_items:
+        logger.info("MCQ verifier skipped: generated text was not parseable as MCQ format.")
+        return quiz_text
+
+    verifier_model = os.environ.get("OLLAMA_MCQ_VERIFIER_MODEL", "").strip() or selected_model
+    compact_context = compact_for_verifier(context)
+
+    quiz_payload = [
+        {
+            "number": item["number"],
+            "question": item["question"],
+            "options": item["options"],
+            "current_correct_answer": item["correct_answer"],
+            "current_explanation": item["explanation"],
+        }
+        for item in original_items
+    ]
+
+    verifier_prompt = f"""
+You are a lightweight MCQ answer-key verifier.
+
+Use ONLY the PDF context. Do not use outside knowledge.
+
+Your job:
+- Check each MCQ against the PDF context.
+- Choose the single option that is best supported by the PDF context.
+- If the current answer is already correct, keep it.
+- If the current answer is wrong and exactly one option is clearly correct, replace the letter.
+- If you cannot prove a different answer from the context, keep the current answer.
+- Write one short explanation that matches the chosen option.
+- Do not rewrite questions.
+- Do not rewrite options.
+- Return JSON only.
+
+Return this exact JSON shape:
+{{
+  "questions": [
+    {{
+      "number": 1,
+      "correct_answer": "A",
+      "explanation": "One short source-grounded sentence."
+    }}
+  ]
+}}
+
+PDF CONTEXT:
+{compact_context}
+
+MCQ QUIZ TO VERIFY:
+{json.dumps(quiz_payload, ensure_ascii=False, indent=2)}
+""".strip()
+
+    try:
+        verifier_response = ollama.chat(
+            model=verifier_model,
+            messages=[{"role": "user", "content": verifier_prompt}],
+            stream=False,
+            options={
+                "temperature": 0.0,
+                "top_p": 0.1,
+                "num_predict": 900,
+                "num_ctx": 8192,
+            },
+        )
+
+        verifier_text = ollama_message_content(verifier_response)
+        verifier_payload = extract_json_object(verifier_text)
+        corrected_quiz = apply_mcq_verifier_payload(quiz_text, verifier_payload)
+
+        if corrected_quiz:
+            logger.info("MCQ verifier completed successfully using model: %s", verifier_model)
+            return corrected_quiz
+
+        logger.info("MCQ verifier returned unusable output; keeping original quiz.")
+        return quiz_text
+
+    except Exception as e:
+        logger.warning("MCQ verifier failed; keeping original quiz. Error: %s", e)
+        return quiz_text
+
+
 def process_question_multi_pdf(
     question: str,
     pdfs_dict: Dict[str, Dict],
@@ -302,6 +618,9 @@ def process_question_multi_pdf(
 
     response = chain.invoke(question)
     logger.info("Generated response with source attribution")
+
+    if is_mcq_request(question):
+        response = verify_mcq_after_generation(formatted_context, response, selected_model)
 
     # Extract source details
     source_details = [
@@ -719,5 +1038,3 @@ Repeat until Q5."""
 
 if __name__ == "__main__":
     main()
-
-

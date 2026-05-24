@@ -16,7 +16,7 @@ use App\Mail\LogoutRecommendationMail;
 use Illuminate\Support\Facades\Log;
 use App\Mail\ReviewReminderMail;
 use App\Models\StudyRecommendation;
-
+use App\Services\ActivityLogger;
 
 class AuthController extends Controller
 {
@@ -54,6 +54,7 @@ class AuthController extends Controller
             'email' => $user->email
         ], 'Verification code sent.', 201);
     }
+
     public function logout(Request $request)
     {
         $user = $request->user();
@@ -81,10 +82,17 @@ class AuthController extends Controller
             $user->currentAccessToken()->delete();
         }
 
+        if ($user) {
+            $user->forceFill([
+                'last_seen_at' => now()->subMinutes(10),
+            ])->save();
+        }
+
         return response()->json([
             'message' => 'Logged out successfully.',
         ]);
     }
+
     public function verify(Request $request)
     {
         return $this->verifyCode($request);
@@ -159,7 +167,11 @@ class AuthController extends Controller
 
         if (!$user->email_verified_at) {
             $code = $this->generateSixDigitCode();
-            $user->update(['verification_code' => $code]);
+
+            $user->update([
+                'verification_code' => $code,
+            ]);
+
             $this->sendAuthEmail(
                 $user->email,
                 'Verify your email',
@@ -169,13 +181,26 @@ class AuthController extends Controller
             return ApiResponse::error('Verify your email first. A new verification code has been sent.', 403);
         }
 
-        $user->last_login_at = now();
-        $user->save();
+        if (($user->status ?? 'active') !== 'active') {
+            return ApiResponse::error('Your account is inactive. Please contact an admin.', 403);
+        }
+
+        $user->forceFill([
+            'last_login_at' => now(),
+            'last_seen_at' => now(),
+        ])->save();
+
+        ActivityLogger::log(
+            $user->id,
+            'user_login',
+            'User logged in',
+            $user->name . ' logged in'
+        );
 
         $token = $user->createToken('api')->plainTextToken;
 
         return ApiResponse::success([
-            'user' => (new UserResource($user))->resolve($request),
+            'user' => (new UserResource($user->fresh()))->resolve($request),
             'token' => $token,
         ]);
     }
@@ -237,8 +262,22 @@ class AuthController extends Controller
 
     public function me(Request $request)
     {
+        $user = $request->user();
+
+        if ($user && ($user->status ?? 'active') !== 'active') {
+            $user->currentAccessToken()?->delete();
+
+            return ApiResponse::error('Your account is inactive. Please contact an admin.', 403);
+        }
+
+        if ($user) {
+            $user->forceFill([
+                'last_seen_at' => now(),
+            ])->save();
+        }
+
         return response()->json([
-            'user' => $request->user()
+            'user' => $user ? (new UserResource($user->fresh()))->resolve($request) : null,
         ]);
     }
 

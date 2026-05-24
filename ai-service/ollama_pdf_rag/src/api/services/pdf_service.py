@@ -6,8 +6,8 @@ from typing import List, Optional
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
-from ...core.document import DocumentProcessor
-from ...core.embeddings import VectorStore
+from core.document import DocumentProcessor
+from core.embeddings import VectorStore
 from ..database import PDFMetadata
 from ..config import settings
 

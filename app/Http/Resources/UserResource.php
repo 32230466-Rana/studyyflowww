@@ -12,6 +12,10 @@ class UserResource extends JsonResource
      */
     public function toArray($request)
     {
+        $isOnline = $this->last_seen_at
+            && $this->status === 'active'
+            && $this->last_seen_at->greaterThanOrEqualTo(now()->subMinutes(5));
+
         return [
             'id' => $this->id,
             'name' => $this->name,
@@ -23,6 +27,9 @@ class UserResource extends JsonResource
             'email_verified_at' => $this->email_verified_at,
             'is_verified' => $this->isVerified(),
             'last_login_at' => $this->last_login_at,
+            'last_seen_at' => $this->last_seen_at,
+            'is_online' => (bool) $isOnline,
+            'activity_status' => $isOnline ? 'online' : 'offline',
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

@@ -26,11 +26,14 @@ const defaultFilters = {
   search: "",
   role: "all",
   status: "all",
+  activity: "all",
 };
 
 const defaultNoteFilters = {
   search: "",
   featured: "all",
+  status: "all",
+  summary: "all",
 };
 
 function getPayload(response) {
@@ -366,6 +369,12 @@ export default function AdminDashboardPage() {
         params.status = filters.status;
       }
 
+      if (filters.activity && filters.activity !== "all") {
+        params.activity = filters.activity;
+      }
+
+      params.sort = "last_seen_at";
+
       const response = await axiosClient.get("/admin/users", { params });
       const payload = getPayload(response);
 
@@ -412,6 +421,14 @@ export default function AdminDashboardPage() {
         params.is_featured = filters.featured === "featured" ? 1 : 0;
       }
 
+      if (filters.status !== "all") {
+        params.status = filters.status;
+      }
+
+      if (filters.summary !== "all") {
+        params.has_summary = filters.summary === "with_summary" ? 1 : 0;
+      }
+
       const response = await axiosClient.get("/admin/notes", { params });
       const payload = getPayload(response);
 
@@ -431,14 +448,12 @@ export default function AdminDashboardPage() {
     setFeedbackError("");
 
     try {
-      const response = await axiosClient.get("/feedback/recent", {
-        params: { limit: 20 },
+      const response = await axiosClient.get("/admin/feedback", {
+        params: { per_page: 20 },
       });
 
       const payload = getPayload(response);
-      const list = Array.isArray(payload)
-        ? payload
-        : payload.feedback || payload.items || [];
+      const list = Array.isArray(payload) ? payload : payload.feedback || payload.items || [];
 
       setFeedback(list);
     } catch (error) {
@@ -469,13 +484,13 @@ export default function AdminDashboardPage() {
     });
   };
 
-  const loadAnnouncements = () => {
+  const loadAnnouncements = async () => {
     try {
-      const saved = JSON.parse(
-        localStorage.getItem("studyflow_announcements") || "[]"
-      );
-
-      setAnnouncements(Array.isArray(saved) ? saved : []);
+      const response = await axiosClient.get("/admin/announcements", {
+        params: { per_page: 20 },
+      });
+      const payload = getPayload(response);
+      setAnnouncements(normalizeList(payload.announcements));
     } catch {
       setAnnouncements([]);
     }
@@ -493,7 +508,7 @@ export default function AdminDashboardPage() {
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userFilters.search, userFilters.role, userFilters.status]);
+  }, [userFilters.search, userFilters.role, userFilters.status, userFilters.activity]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -502,7 +517,7 @@ export default function AdminDashboardPage() {
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noteFilters.search, noteFilters.featured]);
+  }, [noteFilters.search, noteFilters.featured, noteFilters.status, noteFilters.summary]);
 
   useEffect(() => {
     loadUsers(userFilters);
@@ -613,6 +628,21 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const toggleNoteStatus = async (noteRecord) => {
+    try {
+      await axiosClient.patch(`/admin/notes/${noteRecord.id}/toggle-status`);
+      showNotice(
+        noteRecord.status === "inactive"
+          ? `${noteRecord.title} activated.`
+          : `${noteRecord.title} deactivated.`
+      );
+
+      await Promise.allSettled([loadNotes(noteFilters), loadDashboard(rangeDays)]);
+    } catch (error) {
+      showNotice(error?.response?.data?.message || "Action failed.");
+    }
+  };
+
   const dashboardStats = dashboard.stats || {};
   const chartRange = dashboard.charts?.range?.labels || [];
   const weekUsers = sum(dashboard.charts?.user_growth || []);
@@ -622,7 +652,7 @@ export default function AdminDashboardPage() {
   const weekSummaries = sum(dashboard.charts?.summary_growth || []);
 
   const activeAdminsCount = activeAdmins.length || dashboardStats.total_admins || 0;
-  const feedbackCount = feedback.length;
+  const feedbackCount = dashboardStats.feedback_count ?? feedback.length;
   const reportsCount = dashboardStats.reports_count ?? null;
 
   const lastAdminLoginAlert = user?.is_admin
@@ -694,8 +724,12 @@ export default function AdminDashboardPage() {
       <StatusBadge key={`status-${record.id}`} type={statusType}>
         {record.status || "inactive"}
       </StatusBadge>,
+      <StatusBadge key={`activity-${record.id}`} type={record.is_online ? "online" : "offline"}>
+        {record.is_online ? "online" : "offline"}
+      </StatusBadge>,
+      <span key={`login-${record.id}`}>{formatDateTime(record.last_login_at)}</span>,
+      <span key={`seen-${record.id}`}>{formatDateTime(record.last_seen_at)}</span>,
       <span key={`created-${record.id}`}>{formatDate(record.created_at)}</span>,
-      <span key={`login-${record.id}`}>{record.last_login_at ? formatDate(record.last_login_at) : "Not exposed"}</span>,
       <div key={`actions-${record.id}`} className="admin-row-actions">
         <button type="button" onClick={() => toggleUserRole(record)}>
           {record.is_admin ? "Make user" : "Make admin"}
@@ -722,9 +756,13 @@ export default function AdminDashboardPage() {
       <StatusBadge key={`note-featured-${record.id}`} type={record.is_featured ? "active" : "unknown"}>
         {record.is_featured ? "featured" : "normal"}
       </StatusBadge>,
-      <StatusBadge key={`note-process-${record.id}`} type="unknown">
-        Not exposed
+      <StatusBadge key={`note-status-${record.id}`} type={record.status === "inactive" ? "inactive" : "active"}>
+        {record.status || "active"}
       </StatusBadge>,
+      <div key={`note-summary-${record.id}`} className="admin-user-name-cell">
+        <strong>{record.has_summary ? `${record.summary_words_count || 0} words` : "No summary"}</strong>
+        <span>{record.summary ? String(record.summary).slice(0, 90) : "No summary generated yet"}</span>
+      </div>,
       <span key={`note-created-${record.id}`}>{formatDate(record.created_at)}</span>,
       <div key={`note-actions-${record.id}`} className="admin-row-actions">
         <button type="button" onClick={() => navigate(`/notes/${record.id}`)}>
@@ -732,6 +770,9 @@ export default function AdminDashboardPage() {
         </button>
         <button type="button" onClick={() => toggleNoteFeatured(record)}>
           {record.is_featured ? "Unfeature" : "Highlight"}
+        </button>
+        <button type="button" onClick={() => toggleNoteStatus(record)}>
+          {record.status === "inactive" ? "Activate" : "Deactivate"}
         </button>
         <button type="button" className="danger" onClick={() => deleteNote(record)}>
           Delete
@@ -1784,6 +1825,7 @@ export default function AdminDashboardPage() {
           <div className="admin-grid-12">
             <StatCard icon="👥" title="Total Users" value={dashboardStats.total_users} subtitle="All registered accounts" tone="blue" />
             <StatCard icon="⚡" title="Active Users" value={dashboardStats.active_users} subtitle="Status: active" tone="green" />
+            <StatCard icon="●" title="Online Users" value={dashboardStats.online_users} subtitle="Seen in the last 5 minutes" tone="green" />
             <StatCard icon="🛡️" title="Admin Users" value={activeAdminsCount} subtitle="All active admins" tone="purple" />
             <StatCard icon="📄" title="Total Notes Uploaded" value={dashboardStats.total_notes} subtitle="Stored notes in the system" tone="orange" />
             <StatCard icon="📥" title="Total PDFs Processed" value={dashboardStats.files_uploaded} subtitle="Files currently tracked" tone="slate" />
@@ -1982,6 +2024,20 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="admin-field">
+              <label>Activity</label>
+              <select
+                className="admin-select"
+                value={userFilters.activity}
+                onChange={(e) => setUserFilters((current) => ({ ...current, activity: e.target.value }))}
+              >
+                <option value="all">All</option>
+                <option value="online">Online now</option>
+                <option value="offline">Offline</option>
+                <option value="never">Never logged in</option>
+              </select>
+            </div>
+
+            <div className="admin-field">
               <label>Quick actions</label>
               <div className="admin-filter-group">
                 <button type="button" onClick={() => navigate("/admin/users")}>Open full page</button>
@@ -2018,8 +2074,10 @@ export default function AdminDashboardPage() {
                 "Email",
                 "Role",
                 "Status",
-                "Registered",
+                "Online",
                 "Last Login",
+                "Last Seen",
+                "Registered",
                 "Actions",
               ]}
               emptyText="No users found."
@@ -2031,7 +2089,7 @@ export default function AdminDashboardPage() {
         <section className="admin-section">
           <SectionHeader
             title="Notes Management"
-            subtitle="Search notes and toggle featured status using the existing admin notes endpoints. Processing status is not exposed by the current backend, so it is shown as a placeholder."
+            subtitle="Search every note, review summaries, and deactivate broken notes without deleting them."
           />
 
           <div className="admin-controls">
@@ -2059,6 +2117,35 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="admin-field">
+              <label>Status</label>
+              <select
+                className="admin-select"
+                value={noteFilters.status}
+                onChange={(e) => setNoteFilters((current) => ({ ...current, status: e.target.value }))}
+              >
+                <option value="all">All</option>
+                <option value="uploaded">Uploaded</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="processing">Processing</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
+
+            <div className="admin-field">
+              <label>Summary</label>
+              <select
+                className="admin-select"
+                value={noteFilters.summary}
+                onChange={(e) => setNoteFilters((current) => ({ ...current, summary: e.target.value }))}
+              >
+                <option value="all">All</option>
+                <option value="with_summary">With summary</option>
+                <option value="without_summary">Without summary</option>
+              </select>
+            </div>
+
+            <div className="admin-field">
               <label>Quick actions</label>
               <div className="admin-filter-group">
                 <button type="button" onClick={() => navigate("/admin/notes")}>Open full page</button>
@@ -2066,10 +2153,6 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="admin-field">
-              <label>Processing status</label>
-              <div className="admin-subtle-note">Not exposed in the current API.</div>
-            </div>
           </div>
 
           <div className="admin-compact-grid" style={{ marginBottom: 14 }}>
@@ -2090,7 +2173,7 @@ export default function AdminDashboardPage() {
             </div>
           ) : (
             <Table
-              columns={["Note", "Owner", "Featured", "Processing", "Created", "Actions"]}
+              columns={["Note", "Owner", "Featured", "Status", "Summary", "Created", "Actions"]}
               emptyText="No notes found."
               rows={noteRows}
             />
@@ -2139,7 +2222,7 @@ export default function AdminDashboardPage() {
         <section className="admin-section">
           <SectionHeader
             title="Announcements"
-            subtitle="Uses the current local storage source so the dashboard can preview announcements without introducing a new backend API."
+            subtitle="Announcements are saved in the backend and shown to every user."
             actions={
               <div className="admin-filter-group">
                 <button type="button" onClick={() => navigate("/admin/announcements")}>Open announcements page</button>

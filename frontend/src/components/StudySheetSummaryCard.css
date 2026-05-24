@@ -1,0 +1,307 @@
+.study-sheet-summary-card {
+    width: 100%;
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 22px;
+    box-shadow: 0 18px 45px rgba(30, 41, 59, 0.08);
+    padding: 22px;
+    position: relative;
+    overflow: hidden;
+}
+
+.study-sheet-summary-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 4px;
+    background: linear-gradient(90deg, #7c3aed, #3b82f6, #22c55e);
+}
+
+.study-sheet-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.study-sheet-title-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+}
+
+.study-sheet-header-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: #6d28d9;
+    background: linear-gradient(135deg, #f5f3ff, #dbeafe);
+    border: 1px solid rgba(124, 58, 237, 0.16);
+}
+
+.study-sheet-eyebrow {
+    margin: 0 0 3px;
+    color: #6d28d9;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.study-sheet-title {
+    margin: 0;
+    color: #111827;
+    font-size: 22px;
+    line-height: 1.2;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.study-sheet-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-width: 48%;
+}
+
+.study-sheet-meta-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(99, 102, 241, 0.18);
+    background: #f8fafc;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.study-sheet-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
+
+.study-sheet-section {
+    --section-accent: #6366f1;
+    --section-bg: #eef2ff;
+    min-width: 0;
+    min-height: 160px;
+    padding: 16px;
+    border: 1px solid color-mix(in srgb, var(--section-accent) 28%, #ffffff);
+    border-radius: 18px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.96)),
+        var(--section-bg);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+    position: relative;
+    overflow: hidden;
+}
+
+.study-sheet-section::after {
+    content: "";
+    position: absolute;
+    inset: auto 14px 12px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--section-accent), transparent);
+    opacity: 0.16;
+}
+
+.study-sheet-section--tall {
+    grid-row: span 2;
+}
+
+.study-sheet-section--wide {
+    grid-column: span 2;
+}
+
+.study-sheet-section--full {
+    grid-column: 1 / -1;
+    min-height: 128px;
+}
+
+.study-sheet-section--purple {
+    --section-accent: #7c3aed;
+    --section-bg: #f5f3ff;
+}
+
+.study-sheet-section--pink {
+    --section-accent: #db2777;
+    --section-bg: #fdf2f8;
+}
+
+.study-sheet-section--yellow {
+    --section-accent: #d97706;
+    --section-bg: #fffbeb;
+}
+
+.study-sheet-section--blue {
+    --section-accent: #2563eb;
+    --section-bg: #eff6ff;
+}
+
+.study-sheet-section--green {
+    --section-accent: #16a34a;
+    --section-bg: #f0fdf4;
+}
+
+.study-sheet-section--rose {
+    --section-accent: #e11d48;
+    --section-bg: #fff1f2;
+}
+
+.study-sheet-section--violet {
+    --section-accent: #8b5cf6;
+    --section-bg: #f5f3ff;
+}
+
+.study-sheet-section--sky {
+    --section-accent: #0284c7;
+    --section-bg: #f0f9ff;
+}
+
+.study-sheet-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    color: #111827;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.study-sheet-section-icon {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: var(--section-accent);
+    background: #ffffff;
+    border: 1px solid color-mix(in srgb, var(--section-accent) 22%, #ffffff);
+    border-radius: 10px;
+}
+
+.study-sheet-section-body {
+    color: #334155;
+    font-size: 13.5px;
+    line-height: 1.68;
+    overflow-wrap: anywhere;
+}
+
+.study-sheet-section-body p {
+    margin: 0;
+}
+
+.study-sheet-section-body p + p {
+    margin-top: 10px;
+}
+
+.study-sheet-list {
+    margin: 0;
+    padding-left: 19px;
+}
+
+.study-sheet-list li {
+    margin: 0 0 8px;
+    padding-left: 2px;
+}
+
+.study-sheet-list li:last-child {
+    margin-bottom: 0;
+}
+
+.study-sheet-quote-list {
+    list-style: none;
+    padding-left: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.study-sheet-quote-list li {
+    margin: 0;
+    padding: 12px 12px 12px 14px;
+    border-left: 3px solid var(--section-accent);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.78);
+}
+
+@media (max-width: 1024px) {
+    .study-sheet-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .study-sheet-section--tall {
+        grid-row: auto;
+    }
+
+    .study-sheet-section--full {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 720px) {
+    .study-sheet-summary-card {
+        padding: 18px;
+        border-radius: 18px;
+    }
+
+    .study-sheet-header {
+        flex-direction: column;
+    }
+
+    .study-sheet-meta {
+        max-width: none;
+        justify-content: flex-start;
+    }
+
+    .study-sheet-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .study-sheet-section,
+    .study-sheet-section--wide,
+    .study-sheet-section--full {
+        grid-column: span 1;
+    }
+
+    .study-sheet-quote-list {
+        grid-template-columns: 1fr;
+    }
+
+    .study-sheet-title {
+        font-size: 19px;
+    }
+}
+
+@media (max-width: 520px) {
+    .study-sheet-summary-card {
+        padding: 16px;
+    }
+
+    .study-sheet-section {
+        min-height: auto;
+        padding: 14px;
+        border-radius: 15px;
+    }
+
+    .study-sheet-header-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+    }
+}

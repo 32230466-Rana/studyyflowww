@@ -11,12 +11,30 @@ function formatDate(value) {
     }
 }
 
+function truncate(text, max = 120) {
+    const value = String(text || "").trim();
+    if (!value) return "-";
+    return value.length > max ? `${value.slice(0, max - 1)}...` : value;
+}
+
 function FeaturedBadge({ featured }) {
     return featured ? (
         <span className="badge badge-accent">featured</span>
     ) : (
-        <span className="badge badge-default">—</span>
+        <span className="badge badge-default">normal</span>
     );
+}
+
+function StatusBadge({ status }) {
+    if (status === "inactive") {
+        return <span className="badge badge-danger">inactive</span>;
+    }
+
+    if (status === "failed") {
+        return <span className="badge badge-warning">failed</span>;
+    }
+
+    return <span className="badge badge-success">{status || "active"}</span>;
 }
 
 function Table({ columns, rows, emptyText }) {
@@ -96,6 +114,8 @@ export default function AdminNotesPage() {
 
     const [search, setSearch] = useState("");
     const [featured, setFeatured] = useState("all");
+    const [status, setStatus] = useState("all");
+    const [summaryFilter, setSummaryFilter] = useState("all");
 
     const [formOpen, setFormOpen] = useState(false);
     const [editing, setEditing] = useState(null);
@@ -103,6 +123,7 @@ export default function AdminNotesPage() {
         title: "",
         description: "",
         source_type: "",
+        status: "active",
     });
 
     const page = pagination.current_page;
@@ -118,6 +139,8 @@ export default function AdminNotesPage() {
 
             if (search.trim()) params.search = search.trim();
             if (featured !== "all") params.is_featured = featured === "featured";
+            if (status !== "all") params.status = status;
+            if (summaryFilter !== "all") params.has_summary = summaryFilter === "with_summary";
 
             const res = await axiosClient.get("/admin/notes", { params });
             const data = res.data?.data || {};
@@ -142,7 +165,7 @@ export default function AdminNotesPage() {
         }, 350);
         return () => clearTimeout(id);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [search, featured, pagination.per_page]);
+    }, [search, featured, status, summaryFilter, pagination.per_page]);
 
     const openEdit = (n) => {
         setError("");
@@ -151,6 +174,7 @@ export default function AdminNotesPage() {
             title: n?.title || "",
             description: n?.description || "",
             source_type: n?.source_type || "",
+            status: n?.status || "active",
         });
         setFormOpen(true);
     };
@@ -171,6 +195,7 @@ export default function AdminNotesPage() {
                 title: form.title,
                 description: form.description,
                 source_type: form.source_type || null,
+                status: form.status,
             });
 
             setFormOpen(false);
@@ -198,6 +223,16 @@ export default function AdminNotesPage() {
         setError("");
         try {
             await axiosClient.patch(`/admin/notes/${n.id}/toggle-featured`);
+            await load(page);
+        } catch (e) {
+            setError(e?.response?.data?.message || "Action failed.");
+        }
+    };
+
+    const toggleStatus = async (n) => {
+        setError("");
+        try {
+            await axiosClient.patch(`/admin/notes/${n.id}/toggle-status`);
             await load(page);
         } catch (e) {
             setError(e?.response?.data?.message || "Action failed.");
@@ -252,6 +287,31 @@ export default function AdminNotesPage() {
                                 <option value="all">All</option>
                                 <option value="featured">Featured</option>
                                 <option value="not_featured">Not featured</option>
+                            </select>
+                        </div>
+
+                        <div className="field" style={{ marginBottom: 0, minWidth: 180, flex: "0 0 auto" }}>
+                            <label className="field-label">Status</label>
+                            <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+                                <option value="all">All</option>
+                                <option value="uploaded">Uploaded</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                                <option value="processing">Processing</option>
+                                <option value="failed">Failed</option>
+                            </select>
+                        </div>
+
+                        <div className="field" style={{ marginBottom: 0, minWidth: 180, flex: "0 0 auto" }}>
+                            <label className="field-label">Summary</label>
+                            <select
+                                className="input"
+                                value={summaryFilter}
+                                onChange={(e) => setSummaryFilter(e.target.value)}
+                            >
+                                <option value="all">All</option>
+                                <option value="with_summary">With summary</option>
+                                <option value="without_summary">Without summary</option>
                             </select>
                         </div>
 
@@ -315,6 +375,21 @@ export default function AdminNotesPage() {
                             />
                         </div>
 
+                        <div className="field">
+                            <label className="field-label">Status</label>
+                            <select
+                                className="input"
+                                value={form.status}
+                                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                            >
+                                <option value="uploaded">Uploaded</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                                <option value="processing">Processing</option>
+                                <option value="failed">Failed</option>
+                            </select>
+                        </div>
+
                         <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
                             <button className="btn btn-primary" type="submit" disabled={saving}>
                                 {saving ? "Saving..." : "Save"}
@@ -328,15 +403,22 @@ export default function AdminNotesPage() {
             ) : null}
 
             <Table
-                columns={["Title", "User", "Source", "Featured", "Created", "Actions"]}
+                columns={["Title", "User", "Source", "Status", "Featured", "Summary", "Created", "Actions"]}
                 emptyText="No notes found."
                 rows={notes.map((n) => [
                     <div key={n.id} style={{ display: "flex", flexDirection: "column", minWidth: 220 }}>
                         <div style={{ fontWeight: 600, whiteSpace: "normal" }}>{n.title}</div>
                     </div>,
-                    n.user?.name || "—",
-                    n.source_type || "—",
+                    n.user?.name || "-",
+                    n.source_type || "-",
+                    <StatusBadge status={n.status} />,
                     <FeaturedBadge featured={!!n.is_featured} />,
+                    <div key={`${n.id}-summary`} style={{ minWidth: 260, maxWidth: 380, whiteSpace: "normal" }}>
+                        <div style={{ fontWeight: 600 }}>
+                            {n.has_summary ? `${n.summary_words_count || 0} words` : "No summary"}
+                        </div>
+                        <div style={{ color: "var(--color-muted)" }}>{truncate(n.summary)}</div>
+                    </div>,
                     formatDate(n.created_at),
                     <div key={`${n.id}-actions`} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button className="btn btn-sm btn-secondary" type="button" onClick={() => openEdit(n)}>
@@ -344,6 +426,9 @@ export default function AdminNotesPage() {
                         </button>
                         <button className="btn btn-sm btn-ghost" type="button" onClick={() => toggleFeatured(n)}>
                             {n.is_featured ? "Unfeature" : "Feature"}
+                        </button>
+                        <button className="btn btn-sm btn-ghost" type="button" onClick={() => toggleStatus(n)}>
+                            {n.status === "inactive" ? "Activate" : "Deactivate"}
                         </button>
                         <button className="btn btn-sm btn-danger" type="button" onClick={() => onDelete(n)}>
                             Delete
