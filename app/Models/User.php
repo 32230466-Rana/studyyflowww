@@ -20,6 +20,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'reset_code',
         'email_verified_at',
         'is_admin',
+        'is_active',
         'status',
         'last_login_at',
         'last_seen_at',
@@ -33,6 +34,7 @@ class User extends Authenticatable implements MustVerifyEmail
         return [
             'email_verified_at' => 'datetime',
             'is_admin' => 'boolean',
+            'is_active' => 'boolean',
             'password' => 'hashed',
             'last_login_at' => 'datetime',
             'last_seen_at' => 'datetime',
@@ -75,7 +77,7 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function isActive(): bool
     {
-        return $this->status === 'active';
+        return ($this->is_active ?? true) && $this->status === 'active';
     }
 
     /**

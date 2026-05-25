@@ -60,21 +60,18 @@ class AuthController extends Controller
         $user = $request->user();
 
         if ($user) {
-            $recommendations = StudyRecommendation::where('user_id', $user->id)
-                ->where(function ($query) {
-                    $query->whereNotNull('slide_number')
-                        ->orWhereNotNull('page_number')
-                        ->orWhereNotNull('slide_title')
-                        ->orWhereNotNull('reason');
-                })
-                ->latest()
-                ->take(5)
-                ->get();
-
-            if ($recommendations->isNotEmpty()) {
-                Mail::to($user->email)->send(
-                    new ReviewReminderMail($user, $recommendations)
+            try {
+                Mail::raw(
+                    'Don\'t forget to study. Review your saved notes, summaries, quizzes, and study plan. We are waiting for you in StudyFlow.',
+                    function ($mail) use ($user) {
+                        $mail->to($user->email)->subject('StudyFlow study reminder');
+                    }
                 );
+            } catch (\Throwable $e) {
+                Log::warning('Logout reminder email failed', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
@@ -86,6 +83,13 @@ class AuthController extends Controller
             $user->forceFill([
                 'last_seen_at' => now()->subMinutes(10),
             ])->save();
+
+            ActivityLogger::log(
+                $user->id,
+                'user_logout',
+                'User logged out',
+                $user->name . ' logged out'
+            );
         }
 
         return response()->json([

@@ -116,6 +116,7 @@ export default function AdminNotesPage() {
     const [featured, setFeatured] = useState("all");
     const [status, setStatus] = useState("all");
     const [summaryFilter, setSummaryFilter] = useState("all");
+    const [userId, setUserId] = useState("");
 
     const [formOpen, setFormOpen] = useState(false);
     const [editing, setEditing] = useState(null);
@@ -141,6 +142,7 @@ export default function AdminNotesPage() {
             if (featured !== "all") params.is_featured = featured === "featured";
             if (status !== "all") params.status = status;
             if (summaryFilter !== "all") params.has_summary = summaryFilter === "with_summary";
+            if (userId.trim()) params.user_id = userId.trim();
 
             const res = await axiosClient.get("/admin/notes", { params });
             const data = res.data?.data || {};
@@ -148,6 +150,10 @@ export default function AdminNotesPage() {
             setNotes(Array.isArray(data.notes) ? data.notes : []);
             setPagination(data.pagination || pagination);
         } catch (e) {
+            console.error("ADMIN NOTES LOAD ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
             setError(e?.response?.data?.message || "Failed to load notes.");
         } finally {
             setLoading(false);
@@ -165,7 +171,7 @@ export default function AdminNotesPage() {
         }, 350);
         return () => clearTimeout(id);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [search, featured, status, summaryFilter, pagination.per_page]);
+    }, [search, featured, status, summaryFilter, userId, pagination.per_page]);
 
     const openEdit = (n) => {
         setError("");
@@ -202,6 +208,10 @@ export default function AdminNotesPage() {
             setEditing(null);
             await load(page);
         } catch (e2) {
+            console.error("ADMIN NOTE SAVE ERROR:", {
+                status: e2?.response?.status,
+                body: e2?.response?.data,
+            });
             setError(e2?.response?.data?.message || "Failed to save note.");
         } finally {
             setSaving(false);
@@ -215,6 +225,10 @@ export default function AdminNotesPage() {
             await axiosClient.delete(`/admin/notes/${n.id}`);
             await load(1);
         } catch (e) {
+            console.error("ADMIN NOTE DELETE ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
             setError(e?.response?.data?.message || "Delete failed.");
         }
     };
@@ -225,6 +239,10 @@ export default function AdminNotesPage() {
             await axiosClient.patch(`/admin/notes/${n.id}/toggle-featured`);
             await load(page);
         } catch (e) {
+            console.error("ADMIN NOTE ACTION ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
             setError(e?.response?.data?.message || "Action failed.");
         }
     };
@@ -235,7 +253,26 @@ export default function AdminNotesPage() {
             await axiosClient.patch(`/admin/notes/${n.id}/toggle-status`);
             await load(page);
         } catch (e) {
+            console.error("ADMIN NOTE STATUS ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
             setError(e?.response?.data?.message || "Action failed.");
+        }
+    };
+
+    const reprocessNote = async (n) => {
+        setError("");
+
+        try {
+            await axiosClient.post(`/admin/notes/${n.id}/reprocess`);
+            await load(page);
+        } catch (e) {
+            console.error("ADMIN NOTE REPROCESS ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
+            setError(e?.response?.data?.message || "Reprocess failed.");
         }
     };
 
@@ -295,6 +332,7 @@ export default function AdminNotesPage() {
                             <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
                                 <option value="all">All</option>
                                 <option value="uploaded">Uploaded</option>
+                                <option value="processed">Processed</option>
                                 <option value="active">Active</option>
                                 <option value="inactive">Inactive</option>
                                 <option value="processing">Processing</option>
@@ -313,6 +351,16 @@ export default function AdminNotesPage() {
                                 <option value="with_summary">With summary</option>
                                 <option value="without_summary">Without summary</option>
                             </select>
+                        </div>
+
+                        <div className="field" style={{ marginBottom: 0, minWidth: 160, flex: "0 0 auto" }}>
+                            <label className="field-label">User ID</label>
+                            <input
+                                className="input"
+                                value={userId}
+                                onChange={(e) => setUserId(e.target.value)}
+                                placeholder="Optional"
+                            />
                         </div>
 
                         <div className="field" style={{ marginBottom: 0, minWidth: 180, flex: "0 0 auto" }}>
@@ -383,6 +431,7 @@ export default function AdminNotesPage() {
                                 onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
                             >
                                 <option value="uploaded">Uploaded</option>
+                                <option value="processed">Processed</option>
                                 <option value="active">Active</option>
                                 <option value="inactive">Inactive</option>
                                 <option value="processing">Processing</option>
@@ -430,6 +479,11 @@ export default function AdminNotesPage() {
                         <button className="btn btn-sm btn-ghost" type="button" onClick={() => toggleStatus(n)}>
                             {n.status === "inactive" ? "Activate" : "Deactivate"}
                         </button>
+                        {n.status === "failed" ? (
+                            <button className="btn btn-sm btn-secondary" type="button" onClick={() => reprocessNote(n)}>
+                                Reprocess
+                            </button>
+                        ) : null}
                         <button className="btn btn-sm btn-danger" type="button" onClick={() => onDelete(n)}>
                             Delete
                         </button>

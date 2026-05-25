@@ -340,6 +340,10 @@ export default function AdminDashboardPage() {
 
       setDashboard(getPayload(response));
     } catch (error) {
+      console.error("ADMIN DASHBOARD LOAD ERROR:", {
+        status: error?.response?.status,
+        body: error?.response?.data,
+      });
       setDashboard(emptyDashboard);
       setDashboardError(
         error?.response?.data?.message || "Dashboard data could not be loaded."
@@ -380,6 +384,10 @@ export default function AdminDashboardPage() {
 
       setUsers(normalizeList(payload.users));
     } catch (error) {
+      console.error("ADMIN DASHBOARD USERS LOAD ERROR:", {
+        status: error?.response?.status,
+        body: error?.response?.data,
+      });
       setUsers([]);
       setUsersError(
         error?.response?.data?.message || "Failed to load users."
@@ -401,7 +409,11 @@ export default function AdminDashboardPage() {
 
       const payload = getPayload(response);
       setActiveAdmins(normalizeList(payload.users));
-    } catch {
+    } catch (error) {
+      console.error("ADMIN DASHBOARD ACTIVE ADMINS LOAD ERROR:", {
+        status: error?.response?.status,
+        body: error?.response?.data,
+      });
       setActiveAdmins([]);
     }
   };
@@ -434,6 +446,10 @@ export default function AdminDashboardPage() {
 
       setNotes(normalizeList(payload.notes));
     } catch (error) {
+      console.error("ADMIN DASHBOARD NOTES LOAD ERROR:", {
+        status: error?.response?.status,
+        body: error?.response?.data,
+      });
       setNotes([]);
       setNotesError(
         error?.response?.data?.message || "Failed to load notes."
@@ -457,6 +473,10 @@ export default function AdminDashboardPage() {
 
       setFeedback(list);
     } catch (error) {
+      console.error("ADMIN DASHBOARD FEEDBACK LOAD ERROR:", {
+        status: error?.response?.status,
+        body: error?.response?.data,
+      });
       setFeedback([]);
       setFeedbackError(
         error?.response?.data?.message || "Failed to load feedback."
@@ -491,7 +511,11 @@ export default function AdminDashboardPage() {
       });
       const payload = getPayload(response);
       setAnnouncements(normalizeList(payload.announcements));
-    } catch {
+    } catch (error) {
+      console.error("ADMIN DASHBOARD ANNOUNCEMENTS LOAD ERROR:", {
+        status: error?.response?.status,
+        body: error?.response?.data,
+      });
       setAnnouncements([]);
     }
   };

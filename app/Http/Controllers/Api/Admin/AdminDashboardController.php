@@ -49,15 +49,19 @@ class AdminDashboardController extends Controller
             'admin_users' => $this->countWhereBoolean('users', 'is_admin', true),
             'featured_notes' => $this->countWhereBoolean('notes', 'is_featured', true),
             'ai_summaries' => $summaryCount,
+            'total_summaries' => $summaryCount,
+            'summaries_generated' => $summaryCount,
             'active_users' => $this->countWhereValue('users', 'status', 'active'),
             'inactive_users' => $this->countWhereValue('users', 'status', 'inactive'),
             'online_users' => $this->countOnlineUsers(),
             'ai_usage_count' => $this->countTable('ai_usages'),
             'ai_usage' => $this->countTable('ai_usages'),
+            'ai_usage_this_week' => $this->countBetween('ai_usages', 'created_at', now()->startOfWeek(), now()->endOfWeek()),
             'quizzes_created' => $quizCount,
             'quiz_count' => $quizCount,
             'feedback_count' => $this->countTable('feedback'),
             'announcements_count' => $this->countTable('announcements'),
+            'saved_study_plans' => $this->countTable('study_plans'),
             'files_uploaded' => $this->countUploadedFiles(),
             'today_users' => $this->countWhereDate('users', 'created_at', today()),
             'today_notes' => $this->countWhereDate('notes', 'created_at', today()),
@@ -68,8 +72,15 @@ class AdminDashboardController extends Controller
         $recentNotes = $this->recentNotes();
         $recentQuizzes = $this->recentQuizzes();
         $recentSummaries = $this->recentSummaries();
+        $recentLogs = $this->recentActivityLogs();
 
         $recentActivity = collect()
+            ->merge($recentLogs)
+            ->merge($recentUsers->take(3)->map(fn($user) => [
+                'icon' => 'user',
+                'title' => 'New user registered: ' . ($user['name'] ?? 'Student'),
+                'created_at' => $user['created_at'] ?? null,
+            ]))
             ->merge($recentNotes->take(3)->map(fn($note) => [
                 'icon' => '📁',
                 'title' => 'New note uploaded: ' . ($note['title'] ?? 'Untitled'),
@@ -189,6 +200,15 @@ class AdminDashboardController extends Controller
         return DB::table($table)->whereDate($column, $date)->count();
     }
 
+    private function countBetween(string $table, string $column, $start, $end): int
+    {
+        if (!Schema::hasTable($table) || !Schema::hasColumn($table, $column)) {
+            return 0;
+        }
+
+        return DB::table($table)->whereBetween($column, [$start, $end])->count();
+    }
+
     private function countByDay(string $table, string $column, $start, $end): array
     {
         if (!Schema::hasTable($table) || !Schema::hasColumn($table, $column)) {
@@ -278,6 +298,51 @@ class AdminDashboardController extends Controller
                 ];
             })
             ->values();
+    }
+
+    private function recentActivityLogs()
+    {
+        if (!Schema::hasTable('recent_activities')) {
+            return collect();
+        }
+
+        return DB::table('recent_activities')
+            ->leftJoin('users', 'recent_activities.user_id', '=', 'users.id')
+            ->select([
+                'recent_activities.id',
+                'recent_activities.type',
+                'recent_activities.title',
+                'recent_activities.description',
+                'recent_activities.created_at',
+                'users.name as user_name',
+                'users.email as user_email',
+            ])
+            ->latest('recent_activities.created_at')
+            ->limit(8)
+            ->get()
+            ->map(fn($activity) => [
+                'id' => $activity->id,
+                'icon' => $activity->type,
+                'type' => $activity->type,
+                'title' => $activity->title ?: $this->activityTitle((string) $activity->type),
+                'description' => $activity->description,
+                'user_name' => $activity->user_name,
+                'user_email' => $activity->user_email,
+                'created_at' => $activity->created_at,
+            ]);
+    }
+
+    private function activityTitle(string $type): string
+    {
+        return match ($type) {
+            'user_login' => 'Login activity',
+            'user_logout' => 'Logout activity',
+            'note_uploaded' => 'New note uploaded',
+            'quiz_generated' => 'Quiz generated',
+            'summary_generated' => 'Summary generated',
+            'feedback_submitted' => 'Feedback submitted',
+            default => str($type)->replace('_', ' ')->title()->toString(),
+        };
     }
 
     private function recentNotes()

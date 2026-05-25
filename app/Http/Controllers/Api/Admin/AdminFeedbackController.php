@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Feedback;
+use App\Services\ActivityLogger;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 
 class AdminFeedbackController extends Controller
 {
@@ -27,6 +29,14 @@ class AdminFeedbackController extends Controller
 
         if ($request->filled('rating')) {
             $query->where('rating', (int) $request->input('rating'));
+        }
+
+        if ($request->filled('type') && Schema::hasColumn('feedback', 'type')) {
+            $query->where('type', (string) $request->input('type'));
+        }
+
+        if ($request->filled('status') && Schema::hasColumn('feedback', 'status')) {
+            $query->where('status', (string) $request->input('status'));
         }
 
         if ($request->has('is_visible')) {
@@ -68,6 +78,37 @@ class AdminFeedbackController extends Controller
         return ApiResponse::success(null, 'Feedback deleted');
     }
 
+    public function resolve(Request $request, Feedback $feedback)
+    {
+        $updates = [];
+
+        if (Schema::hasColumn('feedback', 'status')) {
+            $updates['status'] = 'resolved';
+        }
+
+        if (Schema::hasColumn('feedback', 'is_visible')) {
+            $updates['is_visible'] = false;
+        }
+
+        if ($updates !== []) {
+            $feedback->update($updates);
+        }
+
+        ActivityLogger::log(
+            $request->user()?->id,
+            'feedback_resolved',
+            'Feedback resolved',
+            'Feedback #' . $feedback->id . ' marked resolved',
+            Feedback::class,
+            $feedback->id
+        );
+
+        return ApiResponse::success(
+            $this->mapFeedback($feedback->fresh()->load('user:id,name,email,status,last_seen_at')),
+            'Feedback resolved'
+        );
+    }
+
     private function mapFeedback(Feedback $feedback): array
     {
         $user = $feedback->user;
@@ -78,7 +119,9 @@ class AdminFeedbackController extends Controller
         return [
             'id' => $feedback->id,
             'name' => $feedback->name,
+            'type' => $feedback->type ?? 'suggestion',
             'message' => $feedback->message,
+            'status' => $feedback->status ?? 'open',
             'rating' => $feedback->rating,
             'is_visible' => (bool) $feedback->is_visible,
             'created_at' => $feedback->created_at,

@@ -1,6 +1,14 @@
 import axios from "axios";
+
+const API_BASE_URL =
+    import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
+
+console.log("AXIOS CLIENT CONFIG:", {
+    baseURL: API_BASE_URL,
+});
+
 const axiosClient = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api",
+    baseURL: API_BASE_URL,
     timeout: 600000, // 10 minutesq
     withCredentials: false,
     headers: {
@@ -10,13 +18,12 @@ const axiosClient = axios.create({
 
 axiosClient.interceptors.request.use(
     (config) => {
-        const token =
-            localStorage.getItem("authToken") ||
-            localStorage.getItem("token") ||
-            localStorage.getItem("access_token");
+        const token = localStorage.getItem("authToken");
 
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
+        } else if (config.headers?.Authorization) {
+            delete config.headers.Authorization;
         }
 
         if (config.data instanceof FormData) {
@@ -25,7 +32,8 @@ axiosClient.interceptors.request.use(
             config.headers["Content-Type"] = "application/json";
         }
 
-        console.log("REQUEST:", {
+        console.log("AXIOS REQUEST:", {
+            baseURL: config.baseURL || API_BASE_URL,
             url: config.url,
             method: config.method,
             hasToken: Boolean(token),
@@ -38,9 +46,19 @@ axiosClient.interceptors.request.use(
 );
 
 axiosClient.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        console.log("AXIOS RESPONSE:", {
+            baseURL: response.config?.baseURL || API_BASE_URL,
+            url: response.config?.url,
+            method: response.config?.method,
+            status: response.status,
+        });
+
+        return response;
+    },
     (error) => {
-        console.log("API ERROR:", {
+        console.log("AXIOS ERROR:", {
+            baseURL: error.config?.baseURL || API_BASE_URL,
             status: error.response?.status,
             url: error.config?.url,
             method: error.config?.method,

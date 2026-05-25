@@ -32,6 +32,8 @@ export default function AdminFeedbackPage() {
   const [search, setSearch] = useState("");
   const [visibility, setVisibility] = useState("all");
   const [rating, setRating] = useState("all");
+  const [type, setType] = useState("all");
+  const [status, setStatus] = useState("all");
 
   const page = pagination.current_page;
 
@@ -48,6 +50,8 @@ export default function AdminFeedbackPage() {
       if (search.trim()) params.search = search.trim();
       if (visibility !== "all") params.is_visible = visibility === "visible";
       if (rating !== "all") params.rating = rating;
+      if (type !== "all") params.type = type;
+      if (status !== "all") params.status = status;
 
       const response = await axiosClient.get("/admin/feedback", { params });
       const data = response.data?.data || {};
@@ -55,6 +59,10 @@ export default function AdminFeedbackPage() {
       setFeedback(Array.isArray(data.feedback) ? data.feedback : []);
       setPagination(data.pagination || pagination);
     } catch (err) {
+      console.error("ADMIN FEEDBACK LOAD ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
       setFeedback([]);
       setError(getApiError(err, "Failed to load feedback."));
     } finally {
@@ -69,7 +77,7 @@ export default function AdminFeedbackPage() {
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, visibility, rating, pagination.per_page]);
+  }, [search, visibility, rating, type, status, pagination.per_page]);
 
   const toggleVisibility = async (item) => {
     setError("");
@@ -78,7 +86,26 @@ export default function AdminFeedbackPage() {
       await axiosClient.patch(`/admin/feedback/${item.id}/toggle-visibility`);
       await loadFeedback(page);
     } catch (err) {
+      console.error("ADMIN FEEDBACK VISIBILITY ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
       setError(getApiError(err, "Action failed."));
+    }
+  };
+
+  const resolveFeedback = async (item) => {
+    setError("");
+
+    try {
+      await axiosClient.patch(`/admin/feedback/${item.id}/resolve`);
+      await loadFeedback(page);
+    } catch (err) {
+      console.error("ADMIN FEEDBACK RESOLVE ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
+      setError(getApiError(err, "Resolve failed."));
     }
   };
 
@@ -91,6 +118,10 @@ export default function AdminFeedbackPage() {
       await axiosClient.delete(`/admin/feedback/${item.id}`);
       await loadFeedback(1);
     } catch (err) {
+      console.error("ADMIN FEEDBACK DELETE ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
       setError(getApiError(err, "Delete failed."));
     }
   };
@@ -101,7 +132,7 @@ export default function AdminFeedbackPage() {
     <div className="page-enter">
       <div className="page-header">
         <h1 className="page-title">Feedback & Reports</h1>
-        <p className="page-desc">Review feedback from every user and hide or delete resolved items.</p>
+        <p className="page-desc">See reported problems and read student complaints or suggestions.</p>
       </div>
 
       {error ? <div className="alert alert-error">{error}</div> : null}
@@ -138,6 +169,26 @@ export default function AdminFeedbackPage() {
               ))}
             </select>
           </div>
+
+          <div className="field" style={{ marginBottom: 0, minWidth: 180 }}>
+            <label className="field-label">Type</label>
+            <select className="input" value={type} onChange={(event) => setType(event.target.value)}>
+              <option value="all">All</option>
+              <option value="suggestion">Suggestion</option>
+              <option value="problem">Problem</option>
+              <option value="quiz issue">Quiz issue</option>
+              <option value="report">Report</option>
+            </select>
+          </div>
+
+          <div className="field" style={{ marginBottom: 0, minWidth: 170 }}>
+            <label className="field-label">Status</label>
+            <select className="input" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="all">All</option>
+              <option value="open">Open</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -146,7 +197,7 @@ export default function AdminFeedbackPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "var(--color-bg)" }}>
-                {["User", "Email", "Online", "Rating", "Message", "Visible", "Created", "Actions"].map((column) => (
+                {["User", "Email", "Type", "Status", "Rating", "Message", "Visible", "Created", "Actions"].map((column) => (
                   <th
                     key={column}
                     style={{
@@ -168,7 +219,7 @@ export default function AdminFeedbackPage() {
             <tbody>
               {feedback.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: 18, color: "var(--color-muted)" }}>
+                  <td colSpan={9} style={{ padding: 18, color: "var(--color-muted)" }}>
                     No feedback found.
                   </td>
                 </tr>
@@ -180,8 +231,13 @@ export default function AdminFeedbackPage() {
                     </td>
                     <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>{item.email || "-"}</td>
                     <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
-                      <span className={item.user?.is_online ? "badge badge-success" : "badge badge-default"}>
-                        {item.user?.is_online ? "online" : "offline"}
+                      <span className="badge badge-info">
+                        {item.type || "suggestion"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                      <span className={item.status === "resolved" ? "badge badge-success" : "badge badge-warning"}>
+                        {item.status || "open"}
                       </span>
                     </td>
                     <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>{item.rating || "-"}</td>
@@ -198,6 +254,9 @@ export default function AdminFeedbackPage() {
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button className="btn btn-sm btn-ghost" type="button" onClick={() => toggleVisibility(item)}>
                           {item.is_visible ? "Hide" : "Show"}
+                        </button>
+                        <button className="btn btn-sm btn-secondary" type="button" onClick={() => resolveFeedback(item)}>
+                          Resolve
                         </button>
                         <button className="btn btn-sm btn-danger" type="button" onClick={() => deleteFeedback(item)}>
                           Delete

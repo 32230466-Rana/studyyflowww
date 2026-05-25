@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.jsx";
+import { adminFeatures } from "../config/adminFeatures";
 
 function AdminHomeIcon() {
     return (
@@ -159,60 +160,70 @@ export default function AdminSidebar({ open, onClose }) {
                         Dashboard
                     </NavLink>
 
-                    <NavLink
-                        to="/admin/users"
-                        className={({ isActive }) =>
-                            `sidebar-link ${isActive ? "active" : ""}`
-                        }
-                        onClick={onClose}
-                    >
-                        <UsersIcon />
-                        Users
-                    </NavLink>
+                    {adminFeatures.users ? (
+                        <NavLink
+                            to="/admin/users"
+                            className={({ isActive }) =>
+                                `sidebar-link ${isActive ? "active" : ""}`
+                            }
+                            onClick={onClose}
+                        >
+                            <UsersIcon />
+                            Users
+                        </NavLink>
+                    ) : null}
 
-                    <NavLink
-                        to="/admin/notes"
-                        className={({ isActive }) =>
-                            `sidebar-link ${isActive ? "active" : ""}`
-                        }
-                        onClick={onClose}
-                    >
-                        <NotesIcon />
-                        Notes
-                    </NavLink>
+                    {adminFeatures.notes ? (
+                        <NavLink
+                            to="/admin/notes"
+                            className={({ isActive }) =>
+                                `sidebar-link ${isActive ? "active" : ""}`
+                            }
+                            onClick={onClose}
+                        >
+                            <NotesIcon />
+                            Notes
+                        </NavLink>
+                    ) : null}
 
-                    <NavLink
-                        to="/admin/announcements"
-                        className={({ isActive }) =>
-                            `sidebar-link ${isActive ? "active" : ""}`
-                        }
-                        onClick={onClose}
-                    >
-                        <NotesIcon />
-                        Announcements
-                    </NavLink>
+                    {adminFeatures.announcements ? (
+                        <NavLink
+                            to="/admin/announcements"
+                            className={({ isActive }) =>
+                                `sidebar-link ${isActive ? "active" : ""}`
+                            }
+                            onClick={onClose}
+                        >
+                            <NotesIcon />
+                            Announcements
+                        </NavLink>
+                    ) : null}
 
-                    <NavLink
-                        to="/admin/feedback"
-                        className={({ isActive }) =>
-                            `sidebar-link ${isActive ? "active" : ""}`
-                        }
-                        onClick={onClose}
-                    >
-                        <NotesIcon />
-                        Feedback
-                    </NavLink>
+                    {adminFeatures.feedback ? (
+                        <NavLink
+                            to="/admin/feedback"
+                            className={({ isActive }) =>
+                                `sidebar-link ${isActive ? "active" : ""}`
+                            }
+                            onClick={onClose}
+                        >
+                            <NotesIcon />
+                            Feedback
+                        </NavLink>
+                    ) : null}
 
-                    <NavLink
-                        to="/admin/ai-management"
-                        className={({ isActive }) =>
-                            `sidebar-link ${isActive ? "active" : ""}`
-                        }
-                        onClick={onClose}
-                    >
-                        <NotesIcon />
-                        AI Management
-                    </NavLink>
+                    {adminFeatures.aiUsage ? (
+                        <NavLink
+                            to="/admin/ai-usage"
+                            className={({ isActive }) =>
+                                `sidebar-link ${isActive ? "active" : ""}`
+                            }
+                            onClick={onClose}
+                        >
+                            <NotesIcon />
+                            AI Usage
+                        </NavLink>
+                    ) : null}
 
                     <NavLink
                         to="/admin/quizzes"
@@ -224,6 +235,19 @@ export default function AdminSidebar({ open, onClose }) {
                         <NotesIcon />
                         Quizzes
                     </NavLink>
+
+                    {adminFeatures.activityLogs ? (
+                        <NavLink
+                            to="/admin/activity"
+                            className={({ isActive }) =>
+                                `sidebar-link ${isActive ? "active" : ""}`
+                            }
+                            onClick={onClose}
+                        >
+                            <NotesIcon />
+                            Activity Logs
+                        </NavLink>
+                    ) : null}
 
                     <NavLink
                         to="/admin/settings"

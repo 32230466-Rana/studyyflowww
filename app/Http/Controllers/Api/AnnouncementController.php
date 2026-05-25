@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Announcement;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class AnnouncementController extends Controller
 {
@@ -32,7 +34,9 @@ class AnnouncementController extends Controller
             ->map(fn (Announcement $announcement) => [
                 'id' => $announcement->id,
                 'title' => $announcement->title,
-                'message' => $announcement->message,
+                'message' => $announcement->message ?? $announcement->body,
+                'body' => $announcement->body ?? $announcement->message,
+                'type' => $announcement->type ?? 'Important message',
                 'is_active' => (bool) $announcement->is_active,
                 'starts_at' => $announcement->starts_at,
                 'expires_at' => $announcement->expires_at,
@@ -41,5 +45,26 @@ class AnnouncementController extends Controller
             ->values();
 
         return ApiResponse::success($announcements, 'Announcements loaded');
+    }
+
+    public function markRead(Request $request, Announcement $announcement)
+    {
+        if (! Schema::hasTable('announcement_reads')) {
+            return ApiResponse::success(null, 'Announcement marked read');
+        }
+
+        DB::table('announcement_reads')->updateOrInsert(
+            [
+                'announcement_id' => $announcement->id,
+                'user_id' => $request->user()->id,
+            ],
+            [
+                'read_at' => now(),
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
+
+        return ApiResponse::success(null, 'Announcement marked read');
     }
 }

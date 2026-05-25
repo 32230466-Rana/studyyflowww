@@ -6,6 +6,8 @@ import ProtectedRoute from "./routes/ProtectedRoute.jsx";
 import AdminRoute from "./routes/AdminRoute.jsx";
 import AppLayout from "./components/AppLayout.jsx";
 import AdminLayout from "./components/AdminLayout.jsx";
+import AdminFeatureGate from "./components/AdminFeatureGate.jsx";
+import { adminFeatures } from "./config/adminFeatures";
 
 import LinkSummaryPage from "./pages/LinkSummaryPage";
 import StudyPlanPage from "./pages/StudyPlanPage.jsx";
@@ -30,6 +32,7 @@ import AdminFeedbackPage from "./pages/AdminFeedbackPage.jsx";
 import AdminSettingsPage from "./pages/AdminSettingPage.jsx";
 import AdminAiManagementPage from "./pages/AdminAiManagementPage.jsx";
 import AdminQuizManagementPage from "./pages/AdminQuizManagementPage.jsx";
+import AdminActivityPage from "./pages/AdminActivityPage.jsx";
 
 import { useAuth } from "./auth/AuthContext.jsx";
 
@@ -53,14 +56,16 @@ function App() {
       {/* Admin protected routes */}
       <Route element={<AdminRoute />}>
         <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<AdminDashboardPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="notes" element={<AdminNotesPage />} />
-          <Route path="announcements" element={<AdminAnnouncementsPage />} />
-          <Route path="feedback" element={<AdminFeedbackPage />} />
+          <Route index element={<AdminFeatureGate enabled={adminFeatures.dashboard}><AdminDashboardPage /></AdminFeatureGate>} />
+          <Route path="users" element={<AdminFeatureGate enabled={adminFeatures.users}><AdminUsersPage /></AdminFeatureGate>} />
+          <Route path="notes" element={<AdminFeatureGate enabled={adminFeatures.notes}><AdminNotesPage /></AdminFeatureGate>} />
+          <Route path="announcements" element={<AdminFeatureGate enabled={adminFeatures.announcements}><AdminAnnouncementsPage /></AdminFeatureGate>} />
+          <Route path="feedback" element={<AdminFeatureGate enabled={adminFeatures.feedback}><AdminFeedbackPage /></AdminFeatureGate>} />
           <Route path="settings" element={<AdminSettingsPage />} />
-          <Route path="ai-management" element={<AdminAiManagementPage />} />
+          <Route path="ai-management" element={<Navigate to="/admin/ai-usage" replace />} />
+          <Route path="ai-usage" element={<AdminFeatureGate enabled={adminFeatures.aiUsage}><AdminAiManagementPage /></AdminFeatureGate>} />
           <Route path="quizzes" element={<AdminQuizManagementPage />} />
+          <Route path="activity" element={<AdminFeatureGate enabled={adminFeatures.activityLogs}><AdminActivityPage /></AdminFeatureGate>} />
         </Route>
       </Route>
 

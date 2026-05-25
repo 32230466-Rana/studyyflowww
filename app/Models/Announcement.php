@@ -8,8 +8,12 @@ class Announcement extends Model
 {
     protected $fillable = [
         'user_id',
+        'created_by',
         'title',
+        'body',
         'message',
+        'type',
+        'send_email',
         'is_active',
         'starts_at',
         'expires_at',
@@ -19,6 +23,7 @@ class Announcement extends Model
     {
         return [
             'is_active' => 'boolean',
+            'send_email' => 'boolean',
             'starts_at' => 'datetime',
             'expires_at' => 'datetime',
         ];

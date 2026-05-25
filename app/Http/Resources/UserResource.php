@@ -23,6 +23,8 @@ class UserResource extends JsonResource
             'phone' => $this->phone,
             'avatar' => $this->getAvatarUrl(),
             'is_admin' => (bool) $this->is_admin,
+            'role' => (bool) $this->is_admin ? 'admin' : 'user',
+            'is_active' => (bool) ($this->is_active ?? (($this->status ?? 'active') === 'active')),
             'status' => $this->status,
             'email_verified_at' => $this->email_verified_at,
             'is_verified' => $this->isVerified(),

@@ -36,6 +36,8 @@ export default function AdminAnnouncementsPage() {
   const [form, setForm] = useState({
     title: "",
     message: "",
+    type: "Important message",
+    send_email: false,
     is_active: true,
   });
 
@@ -60,6 +62,10 @@ export default function AdminAnnouncementsPage() {
       setAnnouncements(Array.isArray(data.announcements) ? data.announcements : []);
       setPagination(data.pagination || pagination);
     } catch (err) {
+      console.error("ADMIN ANNOUNCEMENTS LOAD ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
       setError(getApiError(err, "Failed to load announcements."));
       setAnnouncements([]);
     } finally {
@@ -81,6 +87,8 @@ export default function AdminAnnouncementsPage() {
     setForm({
       title: "",
       message: "",
+      type: "Important message",
+      send_email: false,
       is_active: true,
     });
   };
@@ -89,7 +97,9 @@ export default function AdminAnnouncementsPage() {
     setEditing(item);
     setForm({
       title: item.title || "",
-      message: item.message || "",
+      message: item.message || item.body || "",
+      type: item.type || "Important message",
+      send_email: false,
       is_active: Boolean(item.is_active),
     });
   };
@@ -103,6 +113,9 @@ export default function AdminAnnouncementsPage() {
       const payload = {
         title: form.title.trim(),
         message: form.message.trim(),
+        body: form.message.trim(),
+        type: form.type,
+        send_email: form.send_email,
         is_active: form.is_active,
       };
 
@@ -115,6 +128,10 @@ export default function AdminAnnouncementsPage() {
       resetForm();
       await load(1);
     } catch (err) {
+      console.error("ADMIN ANNOUNCEMENT SAVE ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
       setError(getApiError(err, "Failed to save announcement."));
     } finally {
       setSaving(false);
@@ -128,7 +145,28 @@ export default function AdminAnnouncementsPage() {
       await axiosClient.patch(`/admin/announcements/${item.id}/toggle-status`);
       await load(page);
     } catch (err) {
+      console.error("ADMIN ANNOUNCEMENT STATUS ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
       setError(getApiError(err, "Action failed."));
+    }
+  };
+
+  const sendEmail = async (item) => {
+    if (!confirm(`Send "${item.title}" by email to all active users?`)) return;
+
+    setError("");
+
+    try {
+      await axiosClient.post(`/admin/announcements/${item.id}/send-email`);
+      await load(page);
+    } catch (err) {
+      console.error("ADMIN ANNOUNCEMENT EMAIL ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
+      setError(getApiError(err, "Email send failed."));
     }
   };
 
@@ -141,6 +179,10 @@ export default function AdminAnnouncementsPage() {
       await axiosClient.delete(`/admin/announcements/${item.id}`);
       await load(1);
     } catch (err) {
+      console.error("ADMIN ANNOUNCEMENT DELETE ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
       setError(getApiError(err, "Delete failed."));
     }
   };
@@ -180,14 +222,39 @@ export default function AdminAnnouncementsPage() {
             />
           </div>
 
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}>
-            <input
-              type="checkbox"
-              checked={form.is_active}
-              onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))}
-            />
-            Active
-          </label>
+          <div className="field">
+            <label className="field-label">Type</label>
+            <select
+              className="input"
+              value={form.type}
+              onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))}
+            >
+              <option>Exam reminder</option>
+              <option>New platform update</option>
+              <option>Maintenance notice</option>
+              <option>Important message</option>
+            </select>
+          </div>
+
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}>
+              <input
+                type="checkbox"
+                checked={form.is_active}
+                onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))}
+              />
+              Active
+            </label>
+
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}>
+              <input
+                type="checkbox"
+                checked={form.send_email}
+                onChange={(event) => setForm((current) => ({ ...current, send_email: event.target.checked }))}
+              />
+              Send by email to active users
+            </label>
+          </div>
 
           <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
             <button className="btn btn-primary" type="submit" disabled={saving}>
@@ -236,9 +303,9 @@ export default function AdminAnnouncementsPage() {
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: 16 }}>{item.title}</h3>
-                  <p style={{ margin: "6px 0 0", color: "var(--color-muted)" }}>{item.message}</p>
+                  <p style={{ margin: "6px 0 0", color: "var(--color-muted)" }}>{item.message || item.body}</p>
                   <small style={{ color: "var(--color-muted)" }}>
-                    {formatDate(item.created_at)} by {item.author?.name || "Admin"}
+                    {item.type || "Important message"} - {formatDate(item.created_at)} by {item.author?.name || "Admin"}
                   </small>
                 </div>
 
@@ -253,6 +320,9 @@ export default function AdminAnnouncementsPage() {
                 </button>
                 <button className="btn btn-sm btn-ghost" type="button" onClick={() => toggleStatus(item)}>
                   {item.is_active ? "Deactivate" : "Activate"}
+                </button>
+                <button className="btn btn-sm btn-ghost" type="button" onClick={() => sendEmail(item)}>
+                  Send email
                 </button>
                 <button className="btn btn-sm btn-danger" type="button" onClick={() => deleteAnnouncement(item)}>
                   Delete

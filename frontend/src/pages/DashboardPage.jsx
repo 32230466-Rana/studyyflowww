@@ -225,6 +225,18 @@ function extractArrayFromApi(response) {
 
     return Array.isArray(data) ? data : [];
 }
+
+function logDashboardNotesError(err) {
+    console.error("DASHBOARD NOTES LOAD ERROR:", {
+        baseURL: err?.config?.baseURL,
+        url: err?.config?.url,
+        method: err?.config?.method,
+        status: err?.response?.status,
+        body: err?.response?.data,
+        message: err?.message,
+    });
+}
+
 function AnnouncementBanner({ announcement }) {
     if (!announcement) return null;
 
@@ -278,15 +290,30 @@ const [latestAnnouncement, setLatestAnnouncement] = useState(null);
         setError("");
 
         try {
+            const authToken = localStorage.getItem("authToken");
+
+            console.log("DASHBOARD NOTES REQUEST:", {
+                url: "/notes",
+                method: "get",
+                hasToken: Boolean(authToken),
+                tokenStart: authToken ? authToken.slice(0, 10) : null,
+            });
+
             const [notesResult, summariesResult] = await Promise.allSettled([
                 axiosClient.get("/notes"),
                 axiosClient.get("/summaries"),
             ]);
 
             if (notesResult.status === "fulfilled") {
+                console.log("DASHBOARD NOTES RESPONSE:", {
+                    status: notesResult.value?.status,
+                    body: notesResult.value?.data,
+                });
+
                 setNotes(extractArrayFromApi(notesResult.value));
             } else {
                 const err = notesResult.reason;
+                logDashboardNotesError(err);
 
                 if (err?.response?.status !== 401) {
                     setError(

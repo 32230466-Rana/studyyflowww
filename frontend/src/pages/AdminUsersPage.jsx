@@ -210,7 +210,10 @@ export default function AdminUsersPage() {
                 }
             );
         } catch (e) {
-            console.log("LOAD USERS ERROR:", e.response?.data || e.message);
+            console.error("LOAD USERS ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
             setError(getApiError(e, "Failed to load users."));
         } finally {
             setLoading(false);
@@ -334,7 +337,10 @@ export default function AdminUsersPage() {
 
             await load(1);
         } catch (e2) {
-            console.log("SAVE USER ERROR:", e2.response?.data || e2.message);
+            console.error("SAVE USER ERROR:", {
+                status: e2?.response?.status,
+                body: e2?.response?.data,
+            });
             setError(getApiError(e2, "Failed to save user."));
         } finally {
             setSaving(false);
@@ -350,7 +356,10 @@ export default function AdminUsersPage() {
             await axiosClient.delete(`/admin/users/${user.id}`);
             await load(1);
         } catch (e) {
-            console.log("DELETE USER ERROR:", e.response?.data || e.message);
+            console.error("DELETE USER ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
             setError(getApiError(e, "Delete failed."));
         }
     };
@@ -363,7 +372,10 @@ export default function AdminUsersPage() {
 
             await load(page);
         } catch (e) {
-            console.log("TOGGLE ADMIN ERROR:", e.response?.data || e.message);
+            console.error("TOGGLE ADMIN ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
             setError(getApiError(e, "Action failed."));
         }
     };
@@ -376,8 +388,42 @@ export default function AdminUsersPage() {
 
             await load(page);
         } catch (e) {
-            console.log("TOGGLE STATUS ERROR:", e.response?.data || e.message);
+            console.error("TOGGLE STATUS ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
             setError(getApiError(e, "Action failed."));
+        }
+    };
+
+    const resetWeeklyUsage = async (user) => {
+        if (!confirm(`Reset weekly AI usage for ${user?.name}?`)) return;
+
+        setError("");
+
+        try {
+            await axiosClient.post(`/admin/users/${user.id}/reset-weekly-usage`);
+            await load(page);
+        } catch (e) {
+            console.error("RESET WEEKLY USAGE ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
+            setError(getApiError(e, "Weekly usage reset failed."));
+        }
+    };
+
+    const sendWeMissYou = async (user) => {
+        setError("");
+
+        try {
+            await axiosClient.post(`/admin/users/${user.id}/send-we-miss-you`);
+        } catch (e) {
+            console.error("SEND WE MISS YOU ERROR:", {
+                status: e?.response?.status,
+                body: e?.response?.data,
+            });
+            setError(getApiError(e, "Email could not be sent."));
         }
     };
 
@@ -761,6 +807,7 @@ export default function AdminUsersPage() {
                     "Role",
                     "Status",
                     "Activity",
+                    "Weekly AI",
                     "Last Login",
                     "Last Seen",
                     "Created",
@@ -794,6 +841,8 @@ export default function AdminUsersPage() {
                         key={`${user.id}-activity`}
                         online={Boolean(user.is_online)}
                     />,
+
+                    `${user.weekly_ai_usage ?? user.weekly_usage ?? 0}/${user.weekly_limit ?? 50}`,
 
                     formatDateTime(user.last_login_at),
 
@@ -833,6 +882,22 @@ export default function AdminUsersPage() {
                             {user.status === "active"
                                 ? "Deactivate"
                                 : "Activate"}
+                        </button>
+
+                        <button
+                            className="btn btn-sm btn-ghost"
+                            type="button"
+                            onClick={() => resetWeeklyUsage(user)}
+                        >
+                            Reset AI
+                        </button>
+
+                        <button
+                            className="btn btn-sm btn-ghost"
+                            type="button"
+                            onClick={() => sendWeMissYou(user)}
+                        >
+                            We miss you
                         </button>
 
                         <button

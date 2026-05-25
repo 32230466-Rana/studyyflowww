@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Note;
+use App\Services\ActivityLogger;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -42,6 +43,10 @@ class AdminNotesController extends Controller
 
         if ($request->filled('source_type')) {
             $query->where('source_type', (string) $request->input('source_type'));
+        }
+
+        if ($request->filled('user_id')) {
+            $query->where('user_id', (int) $request->input('user_id'));
         }
 
         if ($request->has('has_summary')) {
@@ -102,6 +107,13 @@ class AdminNotesController extends Controller
                 'total' => $notes->total(),
                 'last_page' => $notes->lastPage(),
             ],
+            'totals' => [
+                'total_notes' => Note::count(),
+                'files_uploaded' => Note::query()
+                    ->whereNotNull('stored_path')
+                    ->orWhereNotNull('original_filename')
+                    ->count(),
+            ],
         ], 'Notes retrieved');
     }
 
@@ -111,7 +123,7 @@ class AdminNotesController extends Controller
             'title' => ['sometimes', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'source_type' => ['nullable', 'string', 'max:50'],
-            'status' => ['sometimes', Rule::in(['active', 'inactive', 'uploaded', 'processing', 'failed'])],
+            'status' => ['sometimes', Rule::in(['active', 'inactive', 'uploaded', 'processed', 'processing', 'failed'])],
         ]);
 
         $note->fill($validated);
@@ -155,6 +167,32 @@ class AdminNotesController extends Controller
             'id' => $note->id,
             'status' => $note->status,
         ], 'Note status toggled');
+    }
+
+    public function reprocess(Request $request, Note $note)
+    {
+        if (($note->status ?? null) !== 'failed') {
+            return ApiResponse::success([
+                'id' => $note->id,
+                'status' => $note->status ?? 'active',
+            ], 'Only failed notes need reprocessing');
+        }
+
+        $note->update(['status' => 'uploaded']);
+
+        ActivityLogger::log(
+            $request->user()?->id,
+            'admin_note_reprocess_requested',
+            'Note reprocess requested',
+            'Admin requested reprocess for note #' . $note->id,
+            Note::class,
+            $note->id
+        );
+
+        return ApiResponse::success([
+            'id' => $note->id,
+            'status' => $note->status,
+        ], 'Note reprocess requested');
     }
 
     private function summaryText(Note $note): string

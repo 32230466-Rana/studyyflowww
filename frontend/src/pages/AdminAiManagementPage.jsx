@@ -1,421 +1,206 @@
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import axiosClient from "../api/axiosClient";
+import { PageSpinner } from "../components/Spinner.jsx";
 
-function StatCard({ icon, title, value, subtitle, variant }) {
-    return (
-        <div className={`ai-admin-stat-card ${variant}`}>
-            <div className="ai-admin-stat-icon">{icon}</div>
-
-            <div>
-                <strong>{value}</strong>
-                <p>{title}</p>
-                <span>{subtitle}</span>
-            </div>
-        </div>
-    );
+function formatDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
 }
 
-function ReportCard({ dotClass, title, text }) {
-    return (
-        <div className="ai-admin-report-card">
-            <span className={`ai-admin-dot ${dotClass}`} />
-
-            <div>
-                <h3>{title}</h3>
-                <p>{text}</p>
-            </div>
-        </div>
-    );
+function getApiError(error, fallback) {
+  const data = error?.response?.data;
+  if (data?.errors) return Object.values(data.errors).flat().join(" ");
+  return data?.message || fallback;
 }
 
 export default function AdminAiManagementPage() {
-    return (
-        <div className="ai-admin-page">
-            <style>{`
-                .ai-admin-page {
-                    min-height: 100%;
-                    padding: 24px;
-                    background:
-                        radial-gradient(circle at top left, rgba(124, 58, 237, 0.14), transparent 30%),
-                        linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
-                    color: #172033;
-                }
+  const [users, setUsers] = useState([]);
+  const [period, setPeriod] = useState({ start: "", end: "" });
+  const [weeklyLimit, setWeeklyLimit] = useState(50);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
-                .ai-admin-top {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    gap: 16px;
-                    margin-bottom: 20px;
-                }
+  const load = async () => {
+    setLoading(true);
+    setError("");
 
-                .ai-admin-kicker {
-                    margin: 0 0 5px;
-                    color: #64748b;
-                    font-size: 14px;
-                    font-weight: 700;
-                }
+    try {
+      const params = {};
+      if (search.trim()) params.search = search.trim();
 
-                .ai-admin-top h1 {
-                    margin: 0;
-                    font-size: 30px;
-                    color: #0f172a;
-                    font-weight: 950;
-                }
+      const response = await axiosClient.get("/admin/ai-usage", { params });
+      const data = response.data?.data || {};
 
-                .ai-admin-back {
-                    text-decoration: none;
-                    background: #ffffff;
-                    color: #1d4ed8;
-                    padding: 12px 16px;
-                    border-radius: 14px;
-                    font-weight: 850;
-                    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-                    transition: 0.2s ease;
-                }
+      setUsers(Array.isArray(data.users) ? data.users : []);
+      setPeriod(data.period || { start: "", end: "" });
+      setWeeklyLimit(Number(data.weekly_limit || 50));
+    } catch (err) {
+      console.error("ADMIN AI USAGE LOAD ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
+      setUsers([]);
+      setError(getApiError(err, "Failed to load AI usage."));
+    } finally {
+      setLoading(false);
+    }
+  };
 
-                .ai-admin-back:hover {
-                    transform: translateY(-2px);
-                    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
-                }
+  useEffect(() => {
+    const timer = setTimeout(load, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
-                .ai-admin-hero {
-                    position: relative;
-                    overflow: hidden;
-                    border-radius: 28px;
-                    padding: 30px 24px;
-                    margin-bottom: 20px;
-                    color: white;
-                    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 55%, #2563eb 100%);
-                    box-shadow: 0 18px 38px rgba(79, 70, 229, 0.25);
-                }
+  const totals = useMemo(() => {
+    const used = users.reduce((sum, user) => sum + Number(user.weekly_usage || user.weekly_ai_usage || 0), 0);
+    const nearLimit = users.filter((user) => Number(user.weekly_usage || user.weekly_ai_usage || 0) >= weeklyLimit).length;
 
-                .ai-admin-hero::after {
-                    content: "";
-                    position: absolute;
-                    width: 180px;
-                    height: 180px;
-                    right: -60px;
-                    bottom: -70px;
-                    border-radius: 999px;
-                    background: rgba(255, 255, 255, 0.16);
-                }
+    return { used, nearLimit, users: users.length };
+  }, [users, weeklyLimit]);
 
-                .ai-admin-hero h2 {
-                    position: relative;
-                    z-index: 2;
-                    margin: 0;
-                    font-size: clamp(34px, 5vw, 58px);
-                    line-height: 1;
-                    font-weight: 950;
-                    text-transform: uppercase;
-                    text-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
-                }
+  const resetUsage = async (user) => {
+    if (!confirm(`Reset weekly AI usage for ${user.name}?`)) return;
 
-                .ai-admin-hero p {
-                    position: relative;
-                    z-index: 2;
-                    max-width: 720px;
-                    margin: 14px 0 0;
-                    font-size: 17px;
-                    line-height: 1.7;
-                    color: rgba(255, 255, 255, 0.92);
-                    font-weight: 650;
-                }
+    setError("");
+    setNotice("");
 
-                .ai-admin-stats-grid {
-                    display: grid;
-                    grid-template-columns: repeat(3, minmax(0, 1fr));
-                    gap: 16px;
-                    margin-bottom: 20px;
-                }
+    try {
+      await axiosClient.post(`/admin/users/${user.id}/reset-weekly-usage`);
+      setNotice("Weekly AI usage reset.");
+      await load();
+    } catch (err) {
+      console.error("ADMIN AI USAGE RESET ERROR:", {
+        status: err?.response?.status,
+        body: err?.response?.data,
+      });
+      setError(getApiError(err, "Failed to reset weekly usage."));
+    }
+  };
 
-                .ai-admin-stat-card {
-                    display: flex;
-                    align-items: center;
-                    gap: 15px;
-                    background: rgba(255, 255, 255, 0.96);
-                    border: 1px solid rgba(148, 163, 184, 0.22);
-                    border-radius: 22px;
-                    padding: 20px;
-                    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
-                }
+  if (loading) return <PageSpinner />;
 
-                .ai-admin-stat-icon {
-                    display: grid;
-                    place-items: center;
-                    width: 58px;
-                    height: 58px;
-                    border-radius: 18px;
-                    font-size: 28px;
-                    flex: 0 0 auto;
-                }
+  return (
+    <div className="page-enter">
+      <div className="page-header">
+        <h1 className="page-title">AI Usage</h1>
+        <p className="page-desc">
+          Weekly AI usage limit is {weeklyLimit} requests per user.
+        </p>
+      </div>
 
-                .ai-admin-stat-card.summary .ai-admin-stat-icon {
-                    background: #fef3c7;
-                }
+      {error ? <div className="alert alert-error">{error}</div> : null}
+      {notice ? <div className="alert alert-success">{notice}</div> : null}
 
-                .ai-admin-stat-card.quiz .ai-admin-stat-icon {
-                    background: #dcfce7;
-                }
-
-                .ai-admin-stat-card.usage .ai-admin-stat-icon {
-                    background: #dbeafe;
-                }
-
-                .ai-admin-stat-card strong {
-                    display: block;
-                    font-size: 30px;
-                    line-height: 1;
-                    color: #0f172a;
-                }
-
-                .ai-admin-stat-card p {
-                    margin: 7px 0 3px;
-                    color: #334155;
-                    font-size: 15px;
-                    font-weight: 900;
-                }
-
-                .ai-admin-stat-card span {
-                    color: #64748b;
-                    font-size: 13px;
-                    font-weight: 700;
-                }
-
-                .ai-admin-section {
-                    background: rgba(255, 255, 255, 0.96);
-                    border: 1px solid rgba(148, 163, 184, 0.22);
-                    border-radius: 24px;
-                    padding: 22px;
-                    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08);
-                    margin-bottom: 20px;
-                }
-
-                .ai-admin-section h2 {
-                    margin: 0 0 16px;
-                    color: #164b8f;
-                    font-size: 24px;
-                    font-weight: 950;
-                }
-
-                .ai-admin-report-grid {
-                    display: grid;
-                    grid-template-columns: repeat(3, minmax(0, 1fr));
-                    gap: 16px;
-                }
-
-                .ai-admin-report-card {
-                    display: flex;
-                    align-items: flex-start;
-                    gap: 13px;
-                    padding: 18px;
-                    border-radius: 18px;
-                    background: #f8fbff;
-                    border: 1px solid #dbeafe;
-                }
-
-                .ai-admin-dot {
-                    width: 13px;
-                    height: 13px;
-                    border-radius: 999px;
-                    margin-top: 7px;
-                    flex: 0 0 auto;
-                }
-
-                .ai-admin-dot.yellow {
-                    background: #fbbf24;
-                }
-
-                .ai-admin-dot.green {
-                    background: #22c55e;
-                }
-
-                .ai-admin-dot.blue {
-                    background: #60a5fa;
-                }
-
-                .ai-admin-report-card h3 {
-                    margin: 0 0 8px;
-                    color: #0f172a;
-                    font-size: 18px;
-                    font-weight: 950;
-                }
-
-                .ai-admin-report-card p {
-                    margin: 0;
-                    color: #64748b;
-                    line-height: 1.6;
-                    font-size: 14px;
-                    font-weight: 650;
-                }
-
-                .ai-admin-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    min-width: 680px;
-                }
-
-                .ai-admin-table th {
-                    text-align: left;
-                    padding: 13px 14px;
-                    background: #f1f5f9;
-                    color: #475569;
-                    font-size: 12px;
-                    text-transform: uppercase;
-                }
-
-                .ai-admin-table td {
-                    padding: 14px;
-                    border-top: 1px solid #e2e8f0;
-                    color: #334155;
-                    font-size: 14px;
-                    font-weight: 700;
-                }
-
-                .ai-admin-table-wrap {
-                    overflow-x: auto;
-                    border-radius: 18px;
-                    border: 1px solid #e2e8f0;
-                }
-
-                .ai-admin-pill {
-                    display: inline-flex;
-                    padding: 6px 11px;
-                    border-radius: 999px;
-                    background: #ede9fe;
-                    color: #6d28d9;
-                    font-weight: 950;
-                    font-size: 12px;
-                }
-
-                @media (max-width: 980px) {
-                    .ai-admin-stats-grid,
-                    .ai-admin-report-grid {
-                        grid-template-columns: 1fr;
-                    }
-
-                    .ai-admin-top {
-                        align-items: flex-start;
-                        flex-direction: column;
-                    }
-
-                    .ai-admin-back {
-                        width: 100%;
-                        text-align: center;
-                    }
-                }
-            `}</style>
-
-            <div className="ai-admin-top">
-                <div>
-                    <p className="ai-admin-kicker">Admin control panel</p>
-                    <h1>AI Management</h1>
-                </div>
-
-                <Link to="/admin" className="ai-admin-back">
-                    ← Back to Admin Dashboard
-                </Link>
-            </div>
-
-            <section className="ai-admin-hero">
-                <h2>AI Management</h2>
-                <p>
-                    Review StudyFlow AI activity, including generated summaries,
-                    quiz usage, and AI tool reports in one organized admin page.
-                </p>
-            </section>
-
-            <section className="ai-admin-stats-grid">
-                <StatCard
-                    icon="📄"
-                    title="Summary Stats"
-                    value="0"
-                    subtitle="Generated AI summaries"
-                    variant="summary"
-                />
-
-                <StatCard
-                    icon="📝"
-                    title="Quiz Stats"
-                    value="0"
-                    subtitle="Generated quizzes and attempts"
-                    variant="quiz"
-                />
-
-                <StatCard
-                    icon="🤖"
-                    title="AI Usage Reports"
-                    value="0"
-                    subtitle="AI requests across StudyFlow"
-                    variant="usage"
-                />
-            </section>
-
-            <section className="ai-admin-section">
-                <h2>AI Reports Overview</h2>
-
-                <div className="ai-admin-report-grid">
-                    <ReportCard
-                        dotClass="yellow"
-                        title="Summary Stats"
-                        text="Track how many summaries were generated and review summary activity across study notes."
-                    />
-
-                    <ReportCard
-                        dotClass="green"
-                        title="Quiz Stats"
-                        text="Monitor quiz generation, quiz attempts, and student interaction with quiz features."
-                    />
-
-                    <ReportCard
-                        dotClass="blue"
-                        title="AI Usage Reports"
-                        text="Review how students use AI tools such as Ask Note, summaries, and local AI features."
-                    />
-                </div>
-            </section>
-
-            <section className="ai-admin-section">
-                <h2>Recent AI Activity</h2>
-
-                <div className="ai-admin-table-wrap">
-                    <table className="ai-admin-table">
-                        <thead>
-                            <tr>
-                                <th>Feature</th>
-                                <th>Description</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            <tr>
-                                <td>Summary Stats</td>
-                                <td>AI-generated summaries report</td>
-                                <td>
-                                    <span className="ai-admin-pill">Ready</span>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td>Quiz Stats</td>
-                                <td>Quiz generation and attempts report</td>
-                                <td>
-                                    <span className="ai-admin-pill">Ready</span>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td>AI Usage Reports</td>
-                                <td>AI request tracking and usage overview</td>
-                                <td>
-                                    <span className="ai-admin-pill">Ready</span>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+      <div className="admin-stats-grid" style={{ marginBottom: 14 }}>
+        <div className="admin-stat-card blue">
+          <div className="admin-stat-copy">
+            <strong>{totals.users}</strong>
+            <p>Users tracked</p>
+            <span>{period.start || "-"} to {period.end || "-"}</span>
+          </div>
         </div>
-    );
+        <div className="admin-stat-card purple">
+          <div className="admin-stat-copy">
+            <strong>{totals.used}</strong>
+            <p>AI usage this week</p>
+            <span>Across all users</span>
+          </div>
+        </div>
+        <div className="admin-stat-card orange">
+          <div className="admin-stat-copy">
+            <strong>{weeklyLimit}</strong>
+            <p>Weekly limit</p>
+            <span>Per user</span>
+          </div>
+        </div>
+        <div className="admin-stat-card green">
+          <div className="admin-stat-copy">
+            <strong>{totals.nearLimit}</strong>
+            <p>At limit</p>
+            <span>Can be reset by admin</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label className="field-label">Search</label>
+          <input
+            className="input"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search user name or email"
+          />
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "var(--color-bg)" }}>
+                {["User", "Email", "Role", "Status", "Used", "Remaining", "Last login", "Actions"].map((column) => (
+                  <th
+                    key={column}
+                    style={{
+                      textAlign: "left",
+                      padding: "12px 14px",
+                      fontSize: 11.5,
+                      color: "var(--color-muted)",
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                      borderBottom: "1px solid var(--color-border)",
+                    }}
+                  >
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {users.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ padding: 18, color: "var(--color-muted)" }}>
+                    No AI usage found.
+                  </td>
+                </tr>
+              ) : (
+                users.map((user) => {
+                  const used = Number(user.weekly_usage || user.weekly_ai_usage || 0);
+                  const remaining = Math.max(0, weeklyLimit - used);
+
+                  return (
+                    <tr key={user.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                      <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>{user.name}</td>
+                      <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>{user.email}</td>
+                      <td style={{ padding: "12px 14px" }}>{user.role || "user"}</td>
+                      <td style={{ padding: "12px 14px" }}>
+                        <span className={user.status === "active" ? "badge badge-success" : "badge badge-default"}>
+                          {user.status || "active"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                        {used} / {weeklyLimit}
+                      </td>
+                      <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>{remaining}</td>
+                      <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>{formatDate(user.last_login_at)}</td>
+                      <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                        <button className="btn btn-sm btn-ghost" type="button" onClick={() => resetUsage(user)}>
+                          Reset weekly usage
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }

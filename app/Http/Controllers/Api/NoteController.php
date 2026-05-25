@@ -11,31 +11,37 @@ use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use App\Services\ActivityLogger;
+use Throwable;
 
 class NoteController extends Controller
 {
     public function index(Request $request)
     {
-        $notes = $request->user()
-            ->notes()
-            ->where(function ($query) {
-                $query->whereNull('status')
-                    ->orWhere('status', '!=', 'inactive');
-            })
-            ->latest()
-            ->paginate(15);
+        try {
+            $userId = $request->user()?->id ?? auth()->id();
 
-        $payload = NoteResource::collection($notes)->response()->getData(true);
+            $notes = Note::query()
+                ->where('user_id', $userId)
+                ->where(function ($query) {
+                    $query->whereNull('status')
+                        ->orWhere('status', '!=', 'inactive');
+                })
+                ->latest()
+                ->get();
 
-        return ApiResponse::success(
-            $payload['data'] ?? [],
-            'OK',
-            200,
-            [
-                'links' => $payload['links'] ?? null,
-                'pagination' => $payload['meta'] ?? null,
-            ]
-        );
+            return ApiResponse::success(
+                NoteResource::collection($notes)->resolve($request),
+                'OK',
+                200,
+                [
+                    'count' => $notes->count(),
+                ]
+            );
+        } catch (Throwable $e) {
+            report($e);
+
+            return ApiResponse::error('Failed to load notes.', 500);
+        }
     }
 
     public function store(StoreNoteRequest $request)

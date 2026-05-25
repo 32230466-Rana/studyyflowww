@@ -3,7 +3,6 @@
 use App\Http\Controllers\Api\AdminFeatureController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Http;
-use App\Http\Controllers\Api\AdminAnnouncementController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Api\NoteController;
 use App\Http\Controllers\Api\AiController;
@@ -21,6 +20,7 @@ use App\Http\Controllers\Api\Admin\AdminNotesController;
 use App\Http\Controllers\Api\Admin\AdminAnnouncementsController;
 use App\Http\Controllers\Api\Admin\AdminFeedbackController;
 use App\Http\Controllers\Api\Admin\AdminRemindersController;
+use App\Http\Controllers\Api\Admin\AdminAiUsageController;
 use App\Http\Controllers\Api\LinkSummaryController;
 use App\Http\Controllers\Api\AiConversationController;
 use App\Http\Controllers\Api\Admin\AdminStudentActivityController;
@@ -32,7 +32,9 @@ Route::middleware(['auth:sanctum', 'last_seen'])->group(function () {
 });
 
 Route::middleware(['auth:sanctum', 'last_seen'])->group(function () {
+    Route::get('/study-plans', [StudyPlanController::class, 'index']);
     Route::post('/study-plans', [StudyPlanController::class, 'store']);
+    Route::post('/study-plans/{studyPlan}/send-email', [StudyPlanController::class, 'sendEmail']);
 });
 
 
@@ -53,28 +55,12 @@ Route::get('/ping', function () {
 | Feedback
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth:sanctum', 'last_seen', 'admin'])->group(function () {
-
-
-    Route::middleware(['auth:sanctum'])->group(function () {
-        Route::post('/quiz-issue-reports', [\App\Http\Controllers\Api\QuizIssueReportController::class, 'store']);
-    });
-    Route::get('/admin/announcements', [AdminAnnouncementController::class, 'index']);
-
-    Route::post('/admin/announcements', [AdminAnnouncementController::class, 'store']);
-
-
-    Route::middleware(['auth:sanctum'])->group(function () {
-        Route::post('/quiz-issue-reports', [\App\Http\Controllers\Api\QuizIssueReportController::class, 'store']);
-    });
-    Route::delete('/admin/announcements/{id}', [AdminAnnouncementController::class, 'destroy']);
-});
-
 Route::get('/feedback/recent', [FeedbackController::class, 'recent']);
 Route::get('/announcements', [AnnouncementController::class, 'index']);
 
 Route::middleware(['auth:sanctum', 'last_seen'])->group(function () {
     Route::post('/feedback', [FeedbackController::class, 'store']);
+    Route::post('/announcements/{announcement}/read', [AnnouncementController::class, 'markRead']);
 });
 
 /*
@@ -220,56 +206,75 @@ Route::post('/ai/link-summary', [LinkSummaryController::class, 'summarize']);
 */
 
 Route::middleware(['auth:sanctum', 'last_seen', 'admin'])->prefix('admin')->group(function () {
-    Route::get('/dashboard', [AdminDashboardController::class, 'dashboard']);
+    Route::middleware('admin_feature:dashboard')->group(function () {
+        Route::get('/dashboard', [AdminDashboardController::class, 'dashboard']);
+    });
 
-    Route::get('/student-activity', [AdminStudentActivityController::class, 'index']);
+    Route::middleware('admin_feature:activity_logs')->group(function () {
+        Route::get('/activity', [AdminFeatureController::class, 'recentActivities']);
+        Route::get('/recent-activities', [AdminFeatureController::class, 'recentActivities']);
+        Route::get('/student-activity', [AdminStudentActivityController::class, 'index']);
+    });
+
+    Route::middleware('admin_feature:users')->group(function () {
+        Route::get('/users', [AdminUsersController::class, 'index']);
+        Route::post('/users', [AdminUsersController::class, 'store']);
+        Route::put('/users/{user}', [AdminUsersController::class, 'update']);
+        Route::delete('/users/{user}', [AdminUsersController::class, 'destroy']);
+        Route::patch('/users/{user}/role', [AdminUsersController::class, 'updateRole']);
+        Route::patch('/users/{user}/status', [AdminUsersController::class, 'updateStatus']);
+        Route::patch('/users/{user}/toggle-admin', [AdminUsersController::class, 'toggleAdmin']);
+        Route::patch('/users/{user}/toggle-status', [AdminUsersController::class, 'toggleStatus']);
+        Route::post('/users/{user}/reset-weekly-usage', [AdminUsersController::class, 'resetWeeklyUsage']);
+        Route::post('/users/{user}/send-we-miss-you', [AdminUsersController::class, 'sendWeMissYou']);
+        Route::post('/users/{id}/we-miss-you', [AdminFeatureController::class, 'sendWeMissYouEmail']);
+    });
+
+    Route::middleware('admin_feature:notes')->group(function () {
+        Route::get('/notes', [AdminNotesController::class, 'index']);
+        Route::put('/notes/{note}', [AdminNotesController::class, 'update']);
+        Route::delete('/notes/{note}', [AdminNotesController::class, 'destroy']);
+        Route::post('/notes/{note}/reprocess', [AdminNotesController::class, 'reprocess']);
+        Route::patch('/notes/{note}/toggle-featured', [AdminNotesController::class, 'toggleFeatured']);
+        Route::patch('/notes/{note}/toggle-status', [AdminNotesController::class, 'toggleStatus']);
+    });
+
+    Route::middleware('admin_feature:ai_usage')->group(function () {
+        Route::get('/ai-usage', [AdminAiUsageController::class, 'index']);
+    });
+
+    Route::middleware('admin_feature:feedback')->group(function () {
+        Route::get('/feedback', [AdminFeedbackController::class, 'index']);
+        Route::patch('/feedback/{feedback}/resolve', [AdminFeedbackController::class, 'resolve']);
+        Route::patch('/feedback/{feedback}/toggle-visibility', [AdminFeedbackController::class, 'toggleVisibility']);
+        Route::delete('/feedback/{feedback}', [AdminFeedbackController::class, 'destroy']);
+    });
+
+    Route::middleware('admin_feature:announcements')->group(function () {
+        Route::get('/announcements', [AdminAnnouncementsController::class, 'index']);
+        Route::post('/announcements', [AdminAnnouncementsController::class, 'store']);
+        Route::put('/announcements/{announcement}', [AdminAnnouncementsController::class, 'update']);
+        Route::delete('/announcements/{announcement}', [AdminAnnouncementsController::class, 'destroy']);
+        Route::post('/announcements/{announcement}/send-email', [AdminAnnouncementsController::class, 'sendEmail']);
+        Route::patch('/announcements/{announcement}/toggle-status', [AdminAnnouncementsController::class, 'toggleStatus']);
+    });
 
     Route::get('/reminders', [AdminRemindersController::class, 'index']);
     Route::post('/reminders', [AdminRemindersController::class, 'store']);
     Route::put('/reminders/{reminder}', [AdminRemindersController::class, 'update']);
     Route::delete('/reminders/{reminder}', [AdminRemindersController::class, 'destroy']);
 
-    Route::get('/users', [AdminUsersController::class, 'index']);
-    Route::post('/users', [AdminUsersController::class, 'store']);
-    Route::put('/users/{user}', [AdminUsersController::class, 'update']);
-    Route::delete('/users/{user}', [AdminUsersController::class, 'destroy']);
-    Route::patch('/users/{user}/toggle-admin', [AdminUsersController::class, 'toggleAdmin']);
-    Route::patch('/users/{user}/toggle-status', [AdminUsersController::class, 'toggleStatus']);
+    Route::get('/exam-reminders', [AdminFeatureController::class, 'examReminders']);
+    Route::post('/exam-reminders', [AdminFeatureController::class, 'storeExamReminder']);
+    Route::post('/exam-reminders/{id}/send', [AdminFeatureController::class, 'sendExamReminder']);
 
-    Route::get('/notes', [AdminNotesController::class, 'index']);
-    Route::put('/notes/{note}', [AdminNotesController::class, 'update']);
-    Route::delete('/notes/{note}', [AdminNotesController::class, 'destroy']);
-    Route::patch('/notes/{note}/toggle-featured', [AdminNotesController::class, 'toggleFeatured']);
-    Route::patch('/notes/{note}/toggle-status', [AdminNotesController::class, 'toggleStatus']);
+    Route::get('/quiz-reports', [AdminFeatureController::class, 'quizReports']);
+    Route::patch('/quiz-reports/{id}/status', [AdminFeatureController::class, 'updateQuizReportStatus']);
 
-    Route::get('/announcements', [AdminAnnouncementsController::class, 'index']);
-    Route::post('/announcements', [AdminAnnouncementsController::class, 'store']);
-    Route::put('/announcements/{announcement}', [AdminAnnouncementsController::class, 'update']);
-    Route::delete('/announcements/{announcement}', [AdminAnnouncementsController::class, 'destroy']);
-    Route::patch('/announcements/{announcement}/toggle-status', [AdminAnnouncementsController::class, 'toggleStatus']);
+    Route::get('/study-plans', [AdminFeatureController::class, 'studyPlans']);
+    Route::delete('/study-plans/{id}', [AdminFeatureController::class, 'deleteStudyPlan']);
 
-
-    Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
-        Route::get('/users', [AdminFeatureController::class, 'users']);
-
-        Route::get('/recent-activities', [AdminFeatureController::class, 'recentActivities']);
-
-        Route::get('/exam-reminders', [AdminFeatureController::class, 'examReminders']);
-        Route::post('/exam-reminders', [AdminFeatureController::class, 'storeExamReminder']);
-        Route::post('/exam-reminders/{id}/send', [AdminFeatureController::class, 'sendExamReminder']);
-
-        Route::get('/quiz-reports', [AdminFeatureController::class, 'quizReports']);
-        Route::patch('/quiz-reports/{id}/status', [AdminFeatureController::class, 'updateQuizReportStatus']);
-
-        Route::get('/study-plans', [AdminFeatureController::class, 'studyPlans']);
-        Route::delete('/study-plans/{id}', [AdminFeatureController::class, 'deleteStudyPlan']);
-
-        Route::post('/users/{id}/we-miss-you', [AdminFeatureController::class, 'sendWeMissYouEmail']);
-        Route::post('/recommendation-email', [AdminFeatureController::class, 'sendRecommendationEmail']);
-    });
-    Route::get('/feedback', [AdminFeedbackController::class, 'index']);
-    Route::patch('/feedback/{feedback}/toggle-visibility', [AdminFeedbackController::class, 'toggleVisibility']);
-    Route::delete('/feedback/{feedback}', [AdminFeedbackController::class, 'destroy']);
+    Route::post('/recommendation-email', [AdminFeatureController::class, 'sendRecommendationEmail']);
 });
 
 /*

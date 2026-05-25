@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ScreenRecorderMenu from "../components/ScreenRecorderMenu";
 const PDF_RAG_URL = "http://127.0.0.1:8016";
-const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
+const GENERATION_TIMEOUT_MS = 15 * 60 * 1000;
 const QUIZ_TIMEOUT_MESSAGE =
   "Quiz generation is taking too long. Please try again with a smaller PDF or lighter model.";
 
@@ -1282,18 +1282,75 @@ ${customPrompt.trim() ? `- Focus topic: ${customPrompt.trim()}` : ""}
         quizData = { answer: quizResponseText };
       }
 
-      console.log("QUERY RESPONSE", quizData);
-      console.log("RAW RESPONSE SHAPE", describeResponseShape(quizData));
-      console.log("RESPONSE SHAPE res.data", describeResponseShape(quizData));
-      console.log("RESPONSE SHAPE res.data.answer", describeResponseShape(quizData?.answer));
-      console.log("RESPONSE SHAPE res.data.data", describeResponseShape(quizData?.data));
+      const responseData = quizData ?? {};
+
+      console.log("QUERY RESPONSE", responseData);
+      console.log("RAW RESPONSE SHAPE", describeResponseShape(responseData));
+      console.log("RESPONSE SHAPE res.data", describeResponseShape(responseData));
+      console.log("RESPONSE SHAPE res.data.answer", describeResponseShape(responseData?.answer));
+      console.log("RESPONSE SHAPE res.data.data", describeResponseShape(responseData?.data));
       console.log(
         "RESPONSE SHAPE res.data.questions",
-        describeResponseShape(quizData?.questions)
+        describeResponseShape(responseData?.questions)
+      );
+      const normalizeResponseText = (value) => {
+        if (!hasCandidateContent(value)) return "";
+        if (typeof value === "string") return value.trim();
+        if (typeof value === "object") return JSON.stringify(value, null, 2).trim();
+        return String(value).trim();
+      };
+      const answer =
+        [
+          responseData?.answer,
+          responseData?.data?.answer,
+          responseData?.data?.response,
+          responseData?.data?.text,
+          responseData?.response,
+          responseData?.text,
+          responseData?.output,
+          responseData?.generated_text,
+          responseData?.generated_quiz,
+          responseData?.quiz_text,
+          responseData?.result?.answer,
+          responseData?.result?.response,
+          responseData?.result?.text,
+          responseData?.data,
+          responseData?.result,
+        ]
+          .map(normalizeResponseText)
+          .find(Boolean) || "";
+      const hasQuestionPayload = Boolean(
+        responseData?.questions ||
+          responseData?.data?.questions ||
+          responseData?.answer?.questions ||
+          responseData?.quiz?.questions ||
+          responseData?.data?.quiz?.questions ||
+          responseData?.result?.questions ||
+          responseData?.result?.answer?.questions
       );
 
-      const extractedQuiz = extractQuizPayload(quizData);
+      console.log("ANSWER LENGTH", answer.length);
+      console.log("SOURCES COUNT", responseData?.sources?.length ?? 0);
+
+      const extractedQuiz = extractQuizPayload(responseData);
       const rawQuizPayload = extractedQuiz.payload;
+
+      if (
+        !answer &&
+        !hasQuestionPayload &&
+        extractedQuiz.parsed.failureType === "no-response-text"
+      ) {
+        console.warn("EMPTY_MODEL_ANSWER", {
+          pdfId,
+          sourcesCount: responseData?.sources?.length ?? 0,
+          metadata: responseData?.metadata,
+          response: responseData,
+        });
+
+        throw new Error(
+          "The PDF was found, but the local AI returned an empty quiz answer. Please regenerate, or try a shorter PDF section."
+        );
+      }
       console.log("EXTRACTED RAW QUIZ PAYLOAD", {
         path: extractedQuiz.path,
         payload: rawQuizPayload,
@@ -1334,7 +1391,7 @@ ${customPrompt.trim() ? `- Focus topic: ${customPrompt.trim()}` : ""}
       const generatedQuiz = serializeQuizForStorage(parsedGeneratedQuiz);
       setQuizText(generatedQuiz);
 
-      const responseSources = quizData.sources || quizData.result?.sources || [];
+      const responseSources = responseData.sources || responseData.result?.sources || [];
       setSources(responseSources);
 
       const createdAt = new Date().toISOString();

@@ -10,6 +10,7 @@ use App\Models\QuizIssueReport;
 use App\Models\StudyPlan;
 use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 class AdminFeatureController extends Controller
@@ -27,7 +28,18 @@ class AdminFeatureController extends Controller
         }
 
         return response()->json([
-            'activities' => $query->take(50)->get(),
+            'activities' => $query->take(50)->get()->map(fn ($activity) => [
+                'id' => $activity->id,
+                'type' => $activity->type,
+                'title' => $activity->title,
+                'description' => $activity->description,
+                'created_at' => $activity->created_at,
+                'user' => $activity->user ? [
+                    'id' => $activity->user->id,
+                    'name' => $activity->user->name,
+                    'email' => $activity->user->email,
+                ] : null,
+            ]),
         ]);
     }
 
@@ -74,10 +86,20 @@ class AdminFeatureController extends Controller
             : User::all();
 
         foreach ($users as $user) {
-            Mail::raw($reminder->message, function ($mail) use ($user, $reminder) {
-                $mail->to($user->email)
-                    ->subject($reminder->title);
-            });
+            try {
+                Mail::raw($reminder->message, function ($mail) use ($user, $reminder) {
+                    $mail->to($user->email)
+                        ->subject($reminder->title);
+                });
+            } catch (\Throwable $e) {
+                Log::warning('Exam reminder email failed', [
+                    'reminder_id' => $reminder->id,
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                continue;
+            }
 
             ActivityLogger::log(
                 $user->id,
@@ -134,7 +156,17 @@ class AdminFeatureController extends Controller
         }
 
         return response()->json([
-            'plans' => $query->get(),
+            'count' => $query->count(),
+            'plans' => $query->get()->map(fn ($plan) => [
+                'id' => $plan->id,
+                'title' => $plan->title,
+                'created_at' => $plan->created_at,
+                'user' => $plan->user ? [
+                    'id' => $plan->user->id,
+                    'name' => $plan->user->name,
+                    'email' => $plan->user->email,
+                ] : null,
+            ]),
         ]);
     }
 
@@ -150,15 +182,34 @@ class AdminFeatureController extends Controller
 
     public function sendWeMissYouEmail($userId)
     {
+        if (! config('admin_features.emails', true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This feature is temporarily disabled.',
+            ], 503);
+        }
+
         $user = User::findOrFail($userId);
 
-        Mail::raw(
-            "Hi {$user->name},\n\nWe miss you on StudyFlow! Come back to review your notes, generate summaries, take quizzes, and continue your study progress.\n\nBest,\nStudyFlow Team",
-            function ($mail) use ($user) {
-                $mail->to($user->email)
-                    ->subject('We miss you on StudyFlow');
-            }
-        );
+        try {
+            Mail::raw(
+                "Hi {$user->name},\n\nWe miss you on StudyFlow! Come back to review your notes, generate summaries, take quizzes, and continue your study progress.\n\nBest,\nStudyFlow Team",
+                function ($mail) use ($user) {
+                    $mail->to($user->email)
+                        ->subject('We miss you on StudyFlow');
+                }
+            );
+        } catch (\Throwable $e) {
+            Log::warning('We Miss You email failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Email could not be sent right now.',
+            ], 500);
+        }
 
         ActivityLogger::log(
             $user->id,
@@ -174,6 +225,13 @@ class AdminFeatureController extends Controller
 
     public function sendRecommendationEmail(Request $request)
     {
+        if (! config('admin_features.emails', true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This feature is temporarily disabled.',
+            ], 503);
+        }
+
         $data = $request->validate([
             'user_id' => ['required', 'exists:users,id'],
             'subject' => ['required', 'string', 'max:255'],
@@ -182,10 +240,22 @@ class AdminFeatureController extends Controller
 
         $user = User::findOrFail($data['user_id']);
 
-        Mail::raw($data['message'], function ($mail) use ($user, $data) {
-            $mail->to($user->email)
-                ->subject($data['subject']);
-        });
+        try {
+            Mail::raw($data['message'], function ($mail) use ($user, $data) {
+                $mail->to($user->email)
+                    ->subject($data['subject']);
+            });
+        } catch (\Throwable $e) {
+            Log::warning('Recommendation email failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Email could not be sent right now.',
+            ], 500);
+        }
 
         ActivityLogger::log(
             $user->id,

@@ -11,12 +11,24 @@ export default function AdminRoute() {
     }
 
     if (!token) {
+        console.warn("ADMIN ROUTE REJECTED:", {
+            reason: "no_token",
+            path: location.pathname,
+        });
+
         return (
             <Navigate to="/login" replace state={{ from: location.pathname }} />
         );
     }
 
     if (!user?.is_admin) {
+        console.warn("ADMIN ROUTE REJECTED:", {
+            reason: "not_admin",
+            path: location.pathname,
+            userId: user?.id,
+            email: user?.email,
+        });
+
         return <Navigate to="/dashboard" replace />;
     }
 

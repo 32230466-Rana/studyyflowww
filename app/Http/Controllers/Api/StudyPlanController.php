@@ -4,12 +4,106 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Note;
+use App\Models\StudyPlan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 
 class StudyPlanController extends Controller
 {
+    public function index(Request $request)
+    {
+        $plans = StudyPlan::query()
+            ->where('user_id', $request->user()->id)
+            ->latest()
+            ->limit(20)
+            ->get()
+            ->map(fn (StudyPlan $plan) => [
+                'id' => $plan->id,
+                'title' => $plan->title,
+                'created_at' => $plan->created_at,
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'plans' => $plans,
+            ],
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'title' => ['nullable', 'string', 'max:255'],
+            'content' => ['required'],
+            'metadata' => ['nullable', 'array'],
+        ]);
+
+        $content = is_string($data['content'])
+            ? $data['content']
+            : json_encode($data['content'], JSON_PRETTY_PRINT);
+
+        $payload = [
+            'user_id' => $request->user()->id,
+            'title' => $data['title'] ?? 'Saved study plan',
+            'content' => $content,
+        ];
+
+        if (Schema::hasColumn('study_plans', 'metadata')) {
+            $payload['metadata'] = $data['metadata'] ?? null;
+        }
+
+        $plan = StudyPlan::create($payload);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Study plan saved.',
+            'data' => [
+                'plan' => [
+                    'id' => $plan->id,
+                    'title' => $plan->title,
+                    'created_at' => $plan->created_at,
+                ],
+            ],
+        ], 201);
+    }
+
+    public function sendEmail(Request $request, StudyPlan $studyPlan)
+    {
+        if ($studyPlan->user_id !== $request->user()->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Not found.',
+            ], 404);
+        }
+
+        try {
+            Mail::raw($studyPlan->content, function ($mail) use ($request, $studyPlan) {
+                $mail->to($request->user()->email)
+                    ->subject($studyPlan->title ?: 'Your StudyFlow study plan');
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Study plan email sent.',
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Study plan email failed', [
+                'study_plan_id' => $studyPlan->id,
+                'user_id' => $request->user()->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Study plan email could not be sent right now.',
+            ], 500);
+        }
+    }
+
     public function generate(Request $request)
     {
         $data = $request->validate([
