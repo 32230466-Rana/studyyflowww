@@ -76,7 +76,7 @@ def extract_model_names(models_info: Any) -> Tuple[str, ...]:
         else:
             # Fallback for any other format
             model_names = tuple()
-            
+
         logger.info(f"Extracted model names: {model_names}")
         return model_names
     except Exception as e:
@@ -147,10 +147,17 @@ def process_and_store_pdf(file_upload, pdf_id: str, is_sample: bool = False):
     data = loader.load()
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=7500, chunk_overlap=100)
     chunks = text_splitter.split_documents(data)
-    logger.info(f"Document split into {len(chunks)} chunks")
 
-    # Add metadata to EACH chunk
-    for i, chunk in enumerate(chunks):
+    # FILTER: Chroma crashes if we insert an empty text chunk (IndexError in upsert)
+    # We must remove any chunk that has completely empty/whitespace text.
+    chunks = [chunk for chunk in chunks if chunk.page_content and chunk.page_content.strip()]
+
+    if not chunks:
+        logger.error("No valid text chunks found in PDF")
+        st.error(f"Could not extract any text from {file_upload.name}. It might be an image-only PDF.")
+        shutil.rmtree(temp_dir)
+        return
+
         chunk.metadata.update({
             "pdf_id": pdf_id,
             "pdf_name": file_upload.name,
@@ -648,10 +655,10 @@ def process_question(question: str, vector_db: Chroma, selected_model: str) -> s
         str: The generated response to the user's question.
     """
     logger.info(f"Processing question: {question} using model: {selected_model}")
-    
+
     # Initialize LLM
     llm = ChatOllama(model=selected_model)
-    
+
     # Query prompt template
     QUERY_PROMPT = PromptTemplate(
         input_variables=["question"],
@@ -665,7 +672,7 @@ def process_question(question: str, vector_db: Chroma, selected_model: str) -> s
 
     # Set up retriever
     retriever = MultiQueryRetriever.from_llm(
-        vector_db.as_retriever(), 
+        vector_db.as_retriever(),
         llm,
         prompt=QUERY_PROMPT
     )
@@ -722,12 +729,12 @@ def delete_vector_db(vector_db: Optional[Chroma]) -> None:
         try:
             # Delete the collection
             vector_db.delete_collection()
-            
+
             # Clear session state
             st.session_state.pop("pdf_pages", None)
             st.session_state.pop("file_upload", None)
             st.session_state.pop("vector_db", None)
-            
+
             st.success("Collection and temporary files deleted successfully.")
             logger.info("Vector DB and related session state cleared")
             st.rerun()
@@ -806,10 +813,10 @@ def main() -> None:
 
     # Add checkbox for sample PDF
     use_sample = col1.toggle(
-        "Use sample PDF (Scammer Agent Paper)", 
+        "Use sample PDF (Scammer Agent Paper)",
         key="sample_checkbox"
     )
-    
+
     # Clear vector DB if switching between sample and upload
     if use_sample != st.session_state.get("use_sample"):
         if st.session_state["vector_db"] is not None:
@@ -907,7 +914,7 @@ def main() -> None:
 
     # Delete collection button
     delete_collection = col1.button(
-        "âš ï¸ Delete collection", 
+        "âš ï¸ Delete collection",
         type="secondary",
         key="delete_button"
     )

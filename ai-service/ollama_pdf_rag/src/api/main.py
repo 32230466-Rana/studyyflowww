@@ -1,7 +1,12 @@
 """FastAPI main application."""
+import sys
+import os
+import logging
+# Add src to the Python path to allow 'core' imports to work without setting PYTHONPATH
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import logging
 
 from .routers import pdfs, query, models, health
 from .database import engine, Base
